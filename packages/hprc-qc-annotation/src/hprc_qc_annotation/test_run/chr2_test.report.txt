@@ -1,0 +1,27 @@
+2026-01-23 11:24:06 - INFO - Running single-pair test on Chrom 2
+2026-01-23 11:24:06 - INFO - Ensembl: test_run/homo_sapiens_gca041900255v1.gff3
+2026-01-23 11:24:06 - INFO - CAT: test_run/HG00408_pat_hprc_r2_v1.0.1_cat_v1.1.gff3
+2026-01-23 11:25:01 - INFO - Loaded 112 mappings from assembly report.
+2026-01-23 11:25:01 - INFO - --- Contig Diagnostics (Before Normalization) ---
+2026-01-23 11:25:01 - INFO - Ensembl unique contigs: 68
+2026-01-23 11:25:01 - INFO - CAT unique contigs: 68
+2026-01-23 11:25:01 - INFO - --- After Filtering for Chrom 2 ---
+2026-01-23 11:25:01 - INFO - Ensembl genes: 5632
+2026-01-23 11:25:01 - INFO - CAT genes: 5730
+2026-01-23 11:25:05 - INFO - --- Overlap Results ---
+2026-01-23 11:25:05 - INFO - Ensembl Genes with Overlap: 5626/5632 (99.9%)
+2026-01-23 11:25:05 - INFO - CAT Genes with Overlap: 5646/5730 (98.5%)
+2026-01-23 11:25:05 - INFO - Overlap Classes:
+2026-01-23 11:25:05 - INFO - classification
+Full-length concordant    5573
+Name match, no overlap    3322
+Ensembl-contained         1149
+CAT-contained             1074
+Partial                    146
+Tiny                       133
+Name: count, dtype: int64
+2026-01-23 11:25:05 - INFO - Written diagnostics to test_run/chr2_test.diagnostics.tsv
+/nfs/production/flicek/ensembl/genebuild/leanne/hprc/cat_compare/hprc-qc/packages/hprc-qc-annotation/src/hprc_qc_annotation/hprc_ensembl_cat_overlap.py:931: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+  overlaps['is_rbh'] = overlaps['is_rbh'].fillna(False)
+2026-01-23 11:25:05 - INFO - Written pairs to test_run/chr2_test.gene_pairs_all.tsv and test_run/chr2_test.gene_pairs_rbh.tsv
+2026-01-23 11:25:05 - INFO - Test Done.

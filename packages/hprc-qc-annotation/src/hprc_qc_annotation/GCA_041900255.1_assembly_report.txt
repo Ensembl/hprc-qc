@@ -1,0 +1,143 @@
+# Assembly name:  HG00408_pat_hprc_rel2
+# Organism name:  Homo sapiens (human)
+# Isolate:  HG00408
+# Sex:  female
+# Taxid:          9606
+# BioSample:      SAMN33621943
+# BioProject:     PRJNA1153491
+# Submitter:      UCSC Genomics Institute
+# Date:           2024-09-11
+# Assembly type:  haploid (paternal haplotype of diploid)
+# Release type:   major
+# Assembly level: Chromosome
+# Genome representation: full
+# WGS project:    JBHDVK01
+# Assembly method: Hifiasm v. 0.19.7
+# Expected final version: no
+# Genome coverage: 63x
+# Sequencing technology: PacBio; Oxford Nanopore
+# GenBank assembly accession: GCA_041900255.1
+# Linked assembly: GCA_041900245.1 (maternal haplotype of diploid)
+#
+## Assembly-Units:
+## GenBank Unit Accession	RefSeq Unit Accession	Assembly-Unit name
+## GCA_041900345.1		Primary Assembly
+#
+# Ordered by chromosome/plasmid; the chromosomes/plasmids are followed by
+# unlocalized scaffolds.
+# Unplaced scaffolds are listed at the end.
+# RefSeq is equal or derived from GenBank object.
+#
+# Sequence-Name	Sequence-Role	Assigned-Molecule	Assigned-Molecule-Location/Type	GenBank-Accn	Relationship	RefSeq-Accn	Assembly-Unit	Sequence-Length	UCSC-style-name
+HG00408#1#h1tg000022l	assembled-molecule	2	Chromosome	CM085953.1	<>	na	Primary Assembly	242990533	na
+HG00408#1#h1tg000011l	assembled-molecule	3	Chromosome	CM085954.1	<>	na	Primary Assembly	201061422	na
+HG00408#1#h1tg000005l	assembled-molecule	5	Chromosome	CM085955.1	<>	na	Primary Assembly	183017961	na
+HG00408#1#h1tg000012l	assembled-molecule	6	Chromosome	CM085956.1	<>	na	Primary Assembly	172821162	na
+HG00408#1#h1tg000027l	assembled-molecule	8	Chromosome	CM085957.1	<>	na	Primary Assembly	146077181	na
+HG00408#1#h1tg000009l	assembled-molecule	9	Chromosome	CM085958.1	<>	na	Primary Assembly	133654424	na
+HG00408#1#h1tg000008l	assembled-molecule	11	Chromosome	CM085959.1	<>	na	Primary Assembly	136776016	na
+HG00408#1#h1tg000017l	assembled-molecule	12	Chromosome	CM085960.1	<>	na	Primary Assembly	134954437	na
+HG00408#1#h1tg000010l	assembled-molecule	16	Chromosome	CM085961.1	<>	na	Primary Assembly	91524693	na
+HG00408#1#h1tg000006l	assembled-molecule	18	Chromosome	CM085962.1	<>	na	Primary Assembly	80492734	na
+HG00408#1#h1tg000028l	assembled-molecule	19	Chromosome	CM085963.1	<>	na	Primary Assembly	61061584	na
+HG00408#1#h1tg000023l	assembled-molecule	20	Chromosome	CM085964.1	<>	na	Primary Assembly	65810583	na
+HG00408#1#h1tg000001l	unplaced-scaffold	na	na	JBHDVK010000001.1	<>	na	Primary Assembly	103422031	na
+HG00408#1#h1tg000003l	unplaced-scaffold	na	na	JBHDVK010000002.1	<>	na	Primary Assembly	130335100	na
+HG00408#1#h1tg000013l	unplaced-scaffold	na	na	JBHDVK010000007.1	<>	na	Primary Assembly	109731761	na
+HG00408#1#h1tg000014l	unplaced-scaffold	na	na	JBHDVK010000008.1	<>	na	Primary Assembly	100955828	na
+HG00408#1#h1tg000016l	unplaced-scaffold	na	na	JBHDVK010000009.1	<>	na	Primary Assembly	62436899	na
+HG00408#1#h1tg000018l	unplaced-scaffold	na	na	JBHDVK010000011.1	<>	na	Primary Assembly	42227753	na
+HG00408#1#h1tg000019l	unplaced-scaffold	na	na	JBHDVK010000012.1	<>	na	Primary Assembly	193627033	na
+HG00408#1#h1tg000020l	unplaced-scaffold	na	na	JBHDVK010000013.1	<>	na	Primary Assembly	452708	na
+HG00408#1#h1tg000021l	unplaced-scaffold	na	na	JBHDVK010000014.1	<>	na	Primary Assembly	101022985	na
+HG00408#1#h1tg000025l	unplaced-scaffold	na	na	JBHDVK010000015.1	<>	na	Primary Assembly	58387571	na
+HG00408#1#h1tg000029l	unplaced-scaffold	na	na	JBHDVK010000018.1	<>	na	Primary Assembly	41630520	na
+HG00408#1#h1tg000031l	unplaced-scaffold	na	na	JBHDVK010000019.1	<>	na	Primary Assembly	1974389	na
+HG00408#1#h1tg000032l	unplaced-scaffold	na	na	JBHDVK010000020.1	<>	na	Primary Assembly	5692624	na
+HG00408#1#h1tg000034l	unplaced-scaffold	na	na	JBHDVK010000021.1	<>	na	Primary Assembly	6371225	na
+HG00408#1#h1tg000038l	unplaced-scaffold	na	na	JBHDVK010000022.1	<>	na	Primary Assembly	1740805	na
+HG00408#1#h1tg000039l	unplaced-scaffold	na	na	JBHDVK010000023.1	<>	na	Primary Assembly	752478	na
+HG00408#1#h1tg000042l	unplaced-scaffold	na	na	JBHDVK010000024.1	<>	na	Primary Assembly	244002	na
+HG00408#1#h1tg000043l	unplaced-scaffold	na	na	JBHDVK010000025.1	<>	na	Primary Assembly	123201	na
+HG00408#1#h1tg000044l	unplaced-scaffold	na	na	JBHDVK010000026.1	<>	na	Primary Assembly	139684	na
+HG00408#1#h1tg000046l	unplaced-scaffold	na	na	JBHDVK010000027.1	<>	na	Primary Assembly	822719	na
+HG00408#1#h1tg000053l	unplaced-scaffold	na	na	JBHDVK010000028.1	<>	na	Primary Assembly	131949	na
+HG00408#1#h1tg000056l	unplaced-scaffold	na	na	JBHDVK010000029.1	<>	na	Primary Assembly	137370	na
+HG00408#1#h1tg000061l	unplaced-scaffold	na	na	JBHDVK010000030.1	<>	na	Primary Assembly	376577	na
+HG00408#1#h1tg000063l	unplaced-scaffold	na	na	JBHDVK010000031.1	<>	na	Primary Assembly	417844	na
+HG00408#1#h1tg000068l	unplaced-scaffold	na	na	JBHDVK010000032.1	<>	na	Primary Assembly	103560	na
+HG00408#1#h1tg000069l	unplaced-scaffold	na	na	JBHDVK010000033.1	<>	na	Primary Assembly	116298	na
+HG00408#1#h1tg000070l	unplaced-scaffold	na	na	JBHDVK010000034.1	<>	na	Primary Assembly	57057	na
+HG00408#1#h1tg000074l	unplaced-scaffold	na	na	JBHDVK010000035.1	<>	na	Primary Assembly	163322	na
+HG00408#1#h1tg000076l	unplaced-scaffold	na	na	JBHDVK010000036.1	<>	na	Primary Assembly	57848	na
+HG00408#1#h1tg000080l	unplaced-scaffold	na	na	JBHDVK010000037.1	<>	na	Primary Assembly	81517	na
+HG00408#1#h1tg000081l	unplaced-scaffold	na	na	JBHDVK010000038.1	<>	na	Primary Assembly	214783	na
+HG00408#1#h1tg000085l	unplaced-scaffold	na	na	JBHDVK010000039.1	<>	na	Primary Assembly	109093	na
+HG00408#1#h1tg000086l	unplaced-scaffold	na	na	JBHDVK010000040.1	<>	na	Primary Assembly	434234	na
+HG00408#1#h1tg000091l	unplaced-scaffold	na	na	JBHDVK010000041.1	<>	na	Primary Assembly	87848	na
+HG00408#1#h1tg000093l	unplaced-scaffold	na	na	JBHDVK010000042.1	<>	na	Primary Assembly	92295	na
+HG00408#1#h1tg000094l	unplaced-scaffold	na	na	JBHDVK010000043.1	<>	na	Primary Assembly	120657	na
+HG00408#1#h1tg000102l	unplaced-scaffold	na	na	JBHDVK010000044.1	<>	na	Primary Assembly	72603	na
+HG00408#1#h1tg000103l	unplaced-scaffold	na	na	JBHDVK010000045.1	<>	na	Primary Assembly	79842	na
+HG00408#1#h1tg000105l	unplaced-scaffold	na	na	JBHDVK010000046.1	<>	na	Primary Assembly	189800	na
+HG00408#1#h1tg000107l	unplaced-scaffold	na	na	JBHDVK010000047.1	<>	na	Primary Assembly	184945	na
+HG00408#1#h1tg000108l	unplaced-scaffold	na	na	JBHDVK010000048.1	<>	na	Primary Assembly	94541	na
+HG00408#1#h1tg000114l	unplaced-scaffold	na	na	JBHDVK010000049.1	<>	na	Primary Assembly	82130	na
+HG00408#1#h1tg000119l	unplaced-scaffold	na	na	JBHDVK010000050.1	<>	na	Primary Assembly	52493	na
+HG00408#1#h1tg000123l	unplaced-scaffold	na	na	JBHDVK010000051.1	<>	na	Primary Assembly	256409	na
+HG00408#1#h1tg000131l	unplaced-scaffold	na	na	JBHDVK010000052.1	<>	na	Primary Assembly	199250	na
+HG00408#1#h1tg000133l	unplaced-scaffold	na	na	JBHDVK010000053.1	<>	na	Primary Assembly	127037	na
+HG00408#1#h1tg000142l	unplaced-scaffold	na	na	JBHDVK010000054.1	<>	na	Primary Assembly	60588	na
+HG00408#1#h1tg000150l	unplaced-scaffold	na	na	JBHDVK010000055.1	<>	na	Primary Assembly	81101	na
+HG00408#1#h1tg000175l	unplaced-scaffold	na	na	JBHDVK010000056.1	<>	na	Primary Assembly	50071	na
+HG00408#1#h1tg000002l	unplaced-scaffold	na	na	JBHDVK010000057.1	<>	na	Primary Assembly	52179216	na
+HG00408#1#h1tg000004l	unplaced-scaffold	na	na	JBHDVK010000058.1	<>	na	Primary Assembly	19030031	na
+HG00408#1#h1tg000007l	unplaced-scaffold	na	na	JBHDVK010000060.1	<>	na	Primary Assembly	136823768	na
+HG00408#1#h1tg000015l	unplaced-scaffold	na	na	JBHDVK010000063.1	<>	na	Primary Assembly	3461496	na
+HG00408#1#h1tg000024l	unplaced-scaffold	na	na	JBHDVK010000066.1	<>	na	Primary Assembly	95561981	na
+HG00408#1#h1tg000026l	unplaced-scaffold	na	na	JBHDVK010000067.1	<>	na	Primary Assembly	103468804	na
+HG00408#1#h1tg000030l	unplaced-scaffold	na	na	JBHDVK010000068.1	<>	na	Primary Assembly	2924582	na
+HG00408#1#h1tg000033l	unplaced-scaffold	na	na	JBHDVK010000069.1	<>	na	Primary Assembly	2241677	na
+HG00408#1#h1tg000035l	unplaced-scaffold	na	na	JBHDVK010000070.1	<>	na	Primary Assembly	4979078	na
+HG00408#1#h1tg000036l	unplaced-scaffold	na	na	JBHDVK010000071.1	<>	na	Primary Assembly	3996934	na
+HG00408#1#h1tg000037l	unplaced-scaffold	na	na	JBHDVK010000072.1	<>	na	Primary Assembly	611586	na
+HG00408#1#h1tg000040l	unplaced-scaffold	na	na	JBHDVK010000073.1	<>	na	Primary Assembly	561760	na
+HG00408#1#h1tg000041l	unplaced-scaffold	na	na	JBHDVK010000074.1	<>	na	Primary Assembly	425917	na
+HG00408#1#h1tg000047l	unplaced-scaffold	na	na	JBHDVK010000075.1	<>	na	Primary Assembly	2298234	na
+HG00408#1#h1tg000048l	unplaced-scaffold	na	na	JBHDVK010000076.1	<>	na	Primary Assembly	225703	na
+HG00408#1#h1tg000049l	unplaced-scaffold	na	na	JBHDVK010000077.1	<>	na	Primary Assembly	120245	na
+HG00408#1#h1tg000052l	unplaced-scaffold	na	na	JBHDVK010000078.1	<>	na	Primary Assembly	2292044	na
+HG00408#1#h1tg000055l	unplaced-scaffold	na	na	JBHDVK010000079.1	<>	na	Primary Assembly	273443	na
+HG00408#1#h1tg000057l	unplaced-scaffold	na	na	JBHDVK010000080.1	<>	na	Primary Assembly	185775	na
+HG00408#1#h1tg000058l	unplaced-scaffold	na	na	JBHDVK010000081.1	<>	na	Primary Assembly	1907616	na
+HG00408#1#h1tg000059l	unplaced-scaffold	na	na	JBHDVK010000082.1	<>	na	Primary Assembly	1073006	na
+HG00408#1#h1tg000064l	unplaced-scaffold	na	na	JBHDVK010000083.1	<>	na	Primary Assembly	303902	na
+HG00408#1#h1tg000066l	unplaced-scaffold	na	na	JBHDVK010000084.1	<>	na	Primary Assembly	116565	na
+HG00408#1#h1tg000072l	unplaced-scaffold	na	na	JBHDVK010000085.1	<>	na	Primary Assembly	976666	na
+HG00408#1#h1tg000073l	unplaced-scaffold	na	na	JBHDVK010000086.1	<>	na	Primary Assembly	127277	na
+HG00408#1#h1tg000077l	unplaced-scaffold	na	na	JBHDVK010000087.1	<>	na	Primary Assembly	64371	na
+HG00408#1#h1tg000079l	unplaced-scaffold	na	na	JBHDVK010000088.1	<>	na	Primary Assembly	258883	na
+HG00408#1#h1tg000082l	unplaced-scaffold	na	na	JBHDVK010000089.1	<>	na	Primary Assembly	68602	na
+HG00408#1#h1tg000083l	unplaced-scaffold	na	na	JBHDVK010000090.1	<>	na	Primary Assembly	220146	na
+HG00408#1#h1tg000084l	unplaced-scaffold	na	na	JBHDVK010000091.1	<>	na	Primary Assembly	54117	na
+HG00408#1#h1tg000087l	unplaced-scaffold	na	na	JBHDVK010000092.1	<>	na	Primary Assembly	63962	na
+HG00408#1#h1tg000088l	unplaced-scaffold	na	na	JBHDVK010000093.1	<>	na	Primary Assembly	109057	na
+HG00408#1#h1tg000089l	unplaced-scaffold	na	na	JBHDVK010000094.1	<>	na	Primary Assembly	359993	na
+HG00408#1#h1tg000090l	unplaced-scaffold	na	na	JBHDVK010000095.1	<>	na	Primary Assembly	77428	na
+HG00408#1#h1tg000092l	unplaced-scaffold	na	na	JBHDVK010000096.1	<>	na	Primary Assembly	112503	na
+HG00408#1#h1tg000095l	unplaced-scaffold	na	na	JBHDVK010000097.1	<>	na	Primary Assembly	146948	na
+HG00408#1#h1tg000096l	unplaced-scaffold	na	na	JBHDVK010000098.1	<>	na	Primary Assembly	191459	na
+HG00408#1#h1tg000100l	unplaced-scaffold	na	na	JBHDVK010000099.1	<>	na	Primary Assembly	122920	na
+HG00408#1#h1tg000101l	unplaced-scaffold	na	na	JBHDVK010000100.1	<>	na	Primary Assembly	107698	na
+HG00408#1#h1tg000113l	unplaced-scaffold	na	na	JBHDVK010000101.1	<>	na	Primary Assembly	125871	na
+HG00408#1#h1tg000115l	unplaced-scaffold	na	na	JBHDVK010000102.1	<>	na	Primary Assembly	119902	na
+HG00408#1#h1tg000121l	unplaced-scaffold	na	na	JBHDVK010000103.1	<>	na	Primary Assembly	52253	na
+HG00408#1#h1tg000122l	unplaced-scaffold	na	na	JBHDVK010000104.1	<>	na	Primary Assembly	97329	na
+HG00408#1#h1tg000124l	unplaced-scaffold	na	na	JBHDVK010000105.1	<>	na	Primary Assembly	55501	na
+HG00408#1#h1tg000125l	unplaced-scaffold	na	na	JBHDVK010000106.1	<>	na	Primary Assembly	114306	na
+HG00408#1#h1tg000127l	unplaced-scaffold	na	na	JBHDVK010000107.1	<>	na	Primary Assembly	65173	na
+HG00408#1#h1tg000132l	unplaced-scaffold	na	na	JBHDVK010000108.1	<>	na	Primary Assembly	64674	na
+HG00408#1#h1tg000135l	unplaced-scaffold	na	na	JBHDVK010000109.1	<>	na	Primary Assembly	62223	na
+HG00408#1#h1tg000140l	unplaced-scaffold	na	na	JBHDVK010000110.1	<>	na	Primary Assembly	51190	na
+HG00408#1#h1tg000173l	unplaced-scaffold	na	na	JBHDVK010000111.1	<>	na	Primary Assembly	52207	na
+HG00408#1#h1tg000174l	unplaced-scaffold	na	na	JBHDVK010000112.1	<>	na	Primary Assembly	55623	na

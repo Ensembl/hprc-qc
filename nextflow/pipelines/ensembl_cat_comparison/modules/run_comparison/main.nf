@@ -2,6 +2,7 @@ process RUN_COMPARISON {
     tag "$assembly_accession"
     label 'process_medium'
     conda 'conda-forge::pandas bioconda::pyranges conda-forge::numpy'
+    container 'https://depot.galaxyproject.org/singularity/pyranges:0.1.2--pyhdfd78af_1'
 
     publishDir "${params.outdir}/results/${assembly_accession}", mode: 'copy', pattern: "*.tsv"
     publishDir "${params.outdir}/logs", mode: 'copy', pattern: "*.log"

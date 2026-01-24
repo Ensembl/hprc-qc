@@ -1,8 +1,10 @@
 process FETCH_ENSEMBL_GFF {
     tag "$assembly_accession"
-    label 'process_low'
+    label 'process_download'
     conda 'conda-forge::curl'
     container 'oras://community.wave.seqera.io/library/curl:4bd76f737af7f9c0'
+    errorStrategy 'retry'
+    maxRetries 3
 
     input:
     tuple val(assembly_accession), val(sample_name)
@@ -29,7 +31,7 @@ process FETCH_ENSEMBL_GFF {
     for VERSION in \${VERSIONS}; do
         URL="\${ASSEMBLY_URL}/\${VERSION}/genes.gff3.gz"
         echo "Trying: \${URL}" >&2
-        if curl -f -L -o ${assembly_accession}.gff3.gz \${URL} 2>&1; then
+        if curl --retry 5 --retry-delay 2 --retry-max-time 120 --connect-timeout 30 --max-time 300 -f -L -o ${assembly_accession}.gff3.gz \${URL} 2>&1; then
             if [ -f "${assembly_accession}.gff3.gz" ] && [ -s "${assembly_accession}.gff3.gz" ]; then
                 echo "Successfully downloaded Ensembl GFF version \${VERSION}" >&2
                 exit 0

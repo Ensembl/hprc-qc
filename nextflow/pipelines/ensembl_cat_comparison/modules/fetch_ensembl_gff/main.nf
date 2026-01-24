@@ -5,6 +5,7 @@ process FETCH_ENSEMBL_GFF {
     container 'oras://community.wave.seqera.io/library/curl:4bd76f737af7f9c0'
     errorStrategy 'retry'
     maxRetries 3
+    publishDir "${params.ensembl_cache_dir}", mode: 'copy', enabled: params.ensembl_cache_dir != null
 
     input:
     tuple val(assembly_accession), val(sample_name)
@@ -13,6 +14,13 @@ process FETCH_ENSEMBL_GFF {
     tuple val(assembly_accession), val(sample_name), path("*.gff3.gz"), emit: gff
 
     script:
+    def cached_file = params.ensembl_cache_dir ? "${params.ensembl_cache_dir}/${assembly_accession}.gff3.gz" : null
+    if (cached_file && file(cached_file).exists()) {
+        """
+        echo "Using cached Ensembl GFF for ${assembly_accession}" >&2
+        ln -s ${cached_file} ${assembly_accession}.gff3.gz
+        """
+    } else {
     """
     BASE_URL="https://ftp.ebi.ac.uk/pub/ensemblorganisms/Homo_sapiens"
     ASSEMBLY_URL="\${BASE_URL}/${assembly_accession}/ensembl/geneset"
@@ -42,7 +50,8 @@ process FETCH_ENSEMBL_GFF {
     echo "ERROR: Failed to download Ensembl GFF for ${assembly_accession}" >&2
     echo "Tried URL: \${ASSEMBLY_URL}" >&2
     exit 1
-    """
+        """
+    }
 
     stub:
     """

@@ -2,6 +2,7 @@ process FETCH_ENSEMBL_GFF {
     tag "$assembly_accession"
     label 'process_low'
     conda 'conda-forge::curl'
+    container 'oras://community.wave.seqera.io/library/curl:4bd76f737af7f9c0'
 
     input:
     tuple val(assembly_accession), val(sample_name)

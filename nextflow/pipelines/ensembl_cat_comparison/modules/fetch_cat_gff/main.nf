@@ -2,6 +2,7 @@ process FETCH_CAT_GFF {
     tag "$sample_name"
     label 'process_low'
     conda 'conda-forge::awscli'
+    container 'oras://community.wave.seqera.io/library/awscli:9678a829f8ce915d'
 
     input:
     tuple val(assembly_accession), val(sample_name)

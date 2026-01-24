@@ -1,6 +1,7 @@
 process FETCH_CAT_GFF {
     tag "$sample_name"
     label 'process_low'
+    conda 'conda-forge::awscli'
 
     input:
     tuple val(assembly_accession), val(sample_name)

@@ -1,6 +1,7 @@
 process FETCH_ENSEMBL_GFF {
     tag "$assembly_accession"
     label 'process_low'
+    conda 'conda-forge::curl'
 
     input:
     tuple val(assembly_accession), val(sample_name)

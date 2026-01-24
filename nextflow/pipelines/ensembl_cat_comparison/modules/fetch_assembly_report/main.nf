@@ -1,6 +1,7 @@
 process FETCH_ASSEMBLY_REPORT {
     tag "$assembly_accession"
     label 'process_low'
+    conda 'bioconda::biopython conda-forge::requests'
 
     input:
     tuple val(assembly_accession), val(sample_name)

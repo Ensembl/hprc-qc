@@ -11,10 +11,20 @@ process FETCH_ENSEMBL_GFF {
     script:
     """
     BASE_URL="https://ftp.ebi.ac.uk/pub/ensemblorganisms/Homo_sapiens"
+    ASSEMBLY_URL="\${BASE_URL}/${assembly_accession}/ensembl/geneset"
 
-    for VERSION in 2025_08 2024_10 2024_08 2024_06; do
-        if curl -f -L -o ${assembly_accession}.gff3.gz \${BASE_URL}/${assembly_accession}/ensembl/geneset/\${VERSION}/genes.gff3.gz 2>/dev/null; then
-            exit 0
+    VERSIONS=\$(curl -s \${ASSEMBLY_URL}/ | grep -oP '\\d{4}_\\d{2}' | sort -r | head -5)
+
+    if [ -z "\${VERSIONS}" ]; then
+        VERSIONS="2025_08 2024_10 2024_08 2024_06 2024_04"
+    fi
+
+    for VERSION in \${VERSIONS}; do
+        URL="\${ASSEMBLY_URL}/\${VERSION}/genes.gff3.gz"
+        if curl -f -L -o ${assembly_accession}.gff3.gz \${URL} 2>&1; then
+            if [ -f "${assembly_accession}.gff3.gz" ] && [ -s "${assembly_accession}.gff3.gz" ]; then
+                exit 0
+            fi
         fi
     done
     """

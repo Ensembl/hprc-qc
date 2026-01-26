@@ -15,6 +15,8 @@ process FETCH_CAT_GFF {
 
     script:
     """
+    set +e
+    
     # Extract base sample name by removing haplotype suffix
     BASE_SAMPLE=\$(echo "${sample_name}" | sed 's/_pat\$//' | sed 's/_mat\$//' | sed 's/_hap1\$//' | sed 's/_hap2\$//')
     S3_PATH="s3://human-pangenomics/working/HPRC/\${BASE_SAMPLE}/assemblies/release2/annotation/cat"

@@ -22,38 +22,47 @@ process FETCH_CAT_GFF {
         """
     } else {
     """
-    BASE_SAMPLE=\$(echo "${sample_name}" | sed 's/_pat\$//' | sed 's/_mat\$//')
+    # Extract base sample name by removing haplotype suffix
+    BASE_SAMPLE=\$(echo "${sample_name}" | sed 's/_pat\$//' | sed 's/_mat\$//' | sed 's/_hap1\$//' | sed 's/_hap2\$//')
     S3_PATH="s3://human-pangenomics/working/HPRC/\${BASE_SAMPLE}/assemblies/release2/annotation/cat"
 
-    # Try original sample name first (pat/mat naming)
+    # Try the original sample name first
     CAT_FILE="${sample_name}_hprc_r2_v1.0.1_cat_v1.1.gff3.gz"
+
+    echo "Attempting to download: \${CAT_FILE}" >&2
     aws s3 cp \${S3_PATH}/\${CAT_FILE} ${sample_name}_cat.gff3.gz --no-sign-request 2>/dev/null
 
-    # If that fails, try hap1/hap2 naming
+    # If that fails, try alternative haplotype naming (pat->hap1, mat->hap2)
     if [ ! -f "${sample_name}_cat.gff3.gz" ]; then
-        echo "pat/mat naming failed, trying hap1/hap2 naming..." >&2
+        echo "Primary file not found, trying alternative naming..." >&2
 
-        # Determine haplotype number based on suffix
+        # Convert naming convention
+        ALT_SAMPLE="${sample_name}"
         if echo "${sample_name}" | grep -q "_pat\$"; then
-            HAP_FILE="\${BASE_SAMPLE}_hap1_hprc_r2_v1.0.1_cat_v1.1.gff3.gz"
+            ALT_SAMPLE=\$(echo "${sample_name}" | sed 's/_pat\$/_hap1/')
         elif echo "${sample_name}" | grep -q "_mat\$"; then
-            HAP_FILE="\${BASE_SAMPLE}_hap2_hprc_r2_v1.0.1_cat_v1.1.gff3.gz"
-        else
-            echo "ERROR: Sample name doesn't match expected pattern: ${sample_name}" >&2
-            exit 1
+            ALT_SAMPLE=\$(echo "${sample_name}" | sed 's/_mat\$/_hap2/')
+        elif echo "${sample_name}" | grep -q "_hap1\$"; then
+            ALT_SAMPLE=\$(echo "${sample_name}" | sed 's/_hap1\$/_pat/')
+        elif echo "${sample_name}" | grep -q "_hap2\$"; then
+            ALT_SAMPLE=\$(echo "${sample_name}" | sed 's/_hap2\$/_mat/')
         fi
 
-        aws s3 cp \${S3_PATH}/\${HAP_FILE} ${sample_name}_cat.gff3.gz --no-sign-request
+        CAT_FILE="\${ALT_SAMPLE}_hprc_r2_v1.0.1_cat_v1.1.gff3.gz"
+        echo "Attempting to download: \${CAT_FILE}" >&2
+        aws s3 cp \${S3_PATH}/\${CAT_FILE} ${sample_name}_cat.gff3.gz --no-sign-request 2>/dev/null
     fi
 
-    # Final check
+    # Final check - if still not found, list available files and exit
     if [ ! -f "${sample_name}_cat.gff3.gz" ]; then
         echo "ERROR: Failed to download CAT GFF for ${sample_name}" >&2
-        echo "Tried: \${CAT_FILE} and \${HAP_FILE}" >&2
-        echo "Listing available files:" >&2
+        echo "Tried: ${sample_name}_hprc_r2_v1.0.1_cat_v1.1.gff3.gz and \${CAT_FILE}" >&2
+        echo "Listing available files in \${S3_PATH}:" >&2
         aws s3 ls \${S3_PATH}/ --no-sign-request >&2
         exit 1
     fi
+
+    echo "Successfully downloaded CAT GFF for ${sample_name}" >&2
         """
     }
 

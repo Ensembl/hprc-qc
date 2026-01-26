@@ -5,9 +5,6 @@ include { FETCH_ASSEMBLY_REPORT } from '../../modules/fetch_assembly_report/main
 workflow FETCH_FILES {
     take:
     assemblies_ch  // Channel of [assembly_accession, sample_name]
-    ensembl_gffs
-    cat_gffs
-    assembly_reports
 
     main:
     // Split input channel for parallel processing

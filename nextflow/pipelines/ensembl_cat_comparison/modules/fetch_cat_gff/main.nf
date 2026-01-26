@@ -16,48 +16,53 @@ process FETCH_CAT_GFF {
     script:
     """
     set +e
-    
+
     # Extract base sample name by removing haplotype suffix
     BASE_SAMPLE=\$(echo "${sample_name}" | sed 's/_pat\$//' | sed 's/_mat\$//' | sed 's/_hap1\$//' | sed 's/_hap2\$//')
     S3_PATH="s3://human-pangenomics/working/HPRC/\${BASE_SAMPLE}/assemblies/release2/annotation/cat"
 
-    # Try the original sample name first
-    CAT_FILE="${sample_name}_hprc_r2_v1.0.1_cat_v1.1.gff3.gz"
-
-    echo "Attempting to download: \${CAT_FILE}" >&2
-    aws s3 cp \${S3_PATH}/\${CAT_FILE} ${sample_name}_cat.gff3.gz --no-sign-request 2>/dev/null
-
-    # If that fails, try alternative haplotype naming (pat->hap1, mat->hap2)
-    if [ ! -f "${sample_name}_cat.gff3.gz" ]; then
-        echo "Primary file not found, trying alternative naming..." >&2
-
-        # Convert naming convention
-        ALT_SAMPLE="${sample_name}"
-        if echo "${sample_name}" | grep -q "_pat\$"; then
-            ALT_SAMPLE=\$(echo "${sample_name}" | sed 's/_pat\$/_hap1/')
-        elif echo "${sample_name}" | grep -q "_mat\$"; then
-            ALT_SAMPLE=\$(echo "${sample_name}" | sed 's/_mat\$/_hap2/')
-        elif echo "${sample_name}" | grep -q "_hap1\$"; then
-            ALT_SAMPLE=\$(echo "${sample_name}" | sed 's/_hap1\$/_pat/')
-        elif echo "${sample_name}" | grep -q "_hap2\$"; then
-            ALT_SAMPLE=\$(echo "${sample_name}" | sed 's/_hap2\$/_mat/')
-        fi
-
-        CAT_FILE="\${ALT_SAMPLE}_hprc_r2_v1.0.1_cat_v1.1.gff3.gz"
-        echo "Attempting to download: \${CAT_FILE}" >&2
-        aws s3 cp \${S3_PATH}/\${CAT_FILE} ${sample_name}_cat.gff3.gz --no-sign-request 2>/dev/null
+    # Get list of alternative sample names (both pat/mat and hap1/hap2)
+    SAMPLE_NAMES="${sample_name}"
+    if echo "${sample_name}" | grep -q "_pat\$"; then
+        ALT_NAME=\$(echo "${sample_name}" | sed 's/_pat\$/_hap1/')
+        SAMPLE_NAMES="${sample_name} \${ALT_NAME}"
+    elif echo "${sample_name}" | grep -q "_mat\$"; then
+        ALT_NAME=\$(echo "${sample_name}" | sed 's/_mat\$/_hap2/')
+        SAMPLE_NAMES="${sample_name} \${ALT_NAME}"
+    elif echo "${sample_name}" | grep -q "_hap1\$"; then
+        ALT_NAME=\$(echo "${sample_name}" | sed 's/_hap1\$/_pat/')
+        SAMPLE_NAMES="${sample_name} \${ALT_NAME}"
+    elif echo "${sample_name}" | grep -q "_hap2\$"; then
+        ALT_NAME=\$(echo "${sample_name}" | sed 's/_hap2\$/_mat/')
+        SAMPLE_NAMES="${sample_name} \${ALT_NAME}"
     fi
 
-    # Final check - if still not found, list available files and exit
-    if [ ! -f "${sample_name}_cat.gff3.gz" ]; then
-        echo "ERROR: Failed to download CAT GFF for ${sample_name}" >&2
-        echo "Tried: ${sample_name}_hprc_r2_v1.0.1_cat_v1.1.gff3.gz and \${CAT_FILE}" >&2
-        echo "Listing available files in \${S3_PATH}:" >&2
-        aws s3 ls \${S3_PATH}/ --no-sign-request >&2
-        exit 1
-    fi
+    # Try different version patterns (most recent first)
+    VERSIONS="v1.1.0 v1.0.1 v1.0.0"
 
-    echo "Successfully downloaded CAT GFF for ${sample_name}" >&2
+    echo "Searching for CAT GFF in \${S3_PATH}" >&2
+
+    # Try each combination of sample name and version
+    for SAMPLE_VAR in \${SAMPLE_NAMES}; do
+        for VERSION in \${VERSIONS}; do
+            CAT_FILE="\${SAMPLE_VAR}_hprc_r2_\${VERSION}_cat_v1.1.gff3.gz"
+            echo "Trying: \${CAT_FILE}" >&2
+
+            if aws s3 cp \${S3_PATH}/\${CAT_FILE} ${sample_name}_cat.gff3.gz --no-sign-request 2>/dev/null; then
+                if [ -f "${sample_name}_cat.gff3.gz" ] && [ -s "${sample_name}_cat.gff3.gz" ]; then
+                    echo "Successfully downloaded: \${CAT_FILE}" >&2
+                    exit 0
+                fi
+            fi
+        done
+    done
+
+    # If nothing worked, list available files and exit
+    echo "ERROR: Failed to download CAT GFF for ${sample_name}" >&2
+    echo "Tried all combinations of sample names (\${SAMPLE_NAMES}) and versions (\${VERSIONS})" >&2
+    echo "Listing available files in \${S3_PATH}:" >&2
+    aws s3 ls \${S3_PATH}/ --no-sign-request >&2
+    exit 1
     """
 
     stub:

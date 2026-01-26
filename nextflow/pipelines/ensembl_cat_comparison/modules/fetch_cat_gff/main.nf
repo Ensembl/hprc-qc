@@ -5,7 +5,7 @@ process FETCH_CAT_GFF {
     container 'oras://community.wave.seqera.io/library/awscli:9678a829f8ce915d'
     errorStrategy 'retry'
     maxRetries 3
-    publishDir "${params.cat_cache_dir}", mode: 'copy', enabled: params.cat_cache_dir != null
+    publishDir "${params.cat_cache_dir}", mode: 'copy'
 
     input:
     tuple val(assembly_accession), val(sample_name)
@@ -14,13 +14,6 @@ process FETCH_CAT_GFF {
     tuple val(assembly_accession), val(sample_name), path("*.gff3.gz"), emit: gff
 
     script:
-    def cached_file = params.cat_cache_dir ? "${params.cat_cache_dir}/${sample_name}_cat.gff3.gz" : null
-    if (cached_file && file(cached_file).exists()) {
-        """
-        echo "Using cached CAT GFF for ${sample_name}" >&2
-        ln -s ${cached_file} ${sample_name}_cat.gff3.gz
-        """
-    } else {
     """
     # Extract base sample name by removing haplotype suffix
     BASE_SAMPLE=\$(echo "${sample_name}" | sed 's/_pat\$//' | sed 's/_mat\$//' | sed 's/_hap1\$//' | sed 's/_hap2\$//')
@@ -63,8 +56,7 @@ process FETCH_CAT_GFF {
     fi
 
     echo "Successfully downloaded CAT GFF for ${sample_name}" >&2
-        """
-    }
+    """
 
     stub:
     """

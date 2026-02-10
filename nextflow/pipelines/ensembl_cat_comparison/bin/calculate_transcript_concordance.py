@@ -109,8 +109,8 @@ def load_rbh_pairs(rbh_path: str) -> List[Tuple[str, str]]:
 
         # Find column indices
         try:
-            ens_id_idx = header.index('ensembl_gene_id')
-            cat_id_idx = header.index('cat_gene_id')
+            ens_id_idx = header.index('ensembl_id')
+            cat_id_idx = header.index('cat_id')
         except ValueError as e:
             print(f"Error: Required column not found in RBH file: {e}", file=sys.stderr)
             print(f"Available columns: {header}", file=sys.stderr)

@@ -105,12 +105,22 @@ def load_rbh_pairs(rbh_path: str) -> List[Tuple[str, str]]:
     """Load RBH gene pairs from TSV."""
     pairs = []
     with open(rbh_path, 'r') as f:
-        header = f.readline()  # Skip header
+        header = f.readline().strip().split('\t')
+
+        # Find column indices
+        try:
+            ens_id_idx = header.index('ensembl_gene_id')
+            cat_id_idx = header.index('cat_gene_id')
+        except ValueError as e:
+            print(f"Error: Required column not found in RBH file: {e}", file=sys.stderr)
+            print(f"Available columns: {header}", file=sys.stderr)
+            sys.exit(1)
+
         for line in f:
             parts = line.strip().split('\t')
-            if len(parts) >= 2:
-                ensembl_id = parts[0]
-                cat_id = parts[1]
+            if len(parts) > max(ens_id_idx, cat_id_idx):
+                ensembl_id = parts[ens_id_idx]
+                cat_id = parts[cat_id_idx]
                 pairs.append((ensembl_id, cat_id))
     return pairs
 

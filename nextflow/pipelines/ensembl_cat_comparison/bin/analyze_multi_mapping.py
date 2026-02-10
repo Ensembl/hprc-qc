@@ -48,7 +48,7 @@ def load_gene_pairs(pairs_path: str, min_overlap: float) -> List[Dict]:
             col_idx[col] = i
 
         # Required columns
-        required = ['ensembl_id', 'cat_id', 'frac_ensembl_covered', 'frac_cat_covered']
+        required = ['ensembl_gene_id', 'cat_gene_id', 'frac_ensembl_covered', 'frac_cat_covered']
         for col in required:
             if col not in col_idx:
                 print(f"Error: Required column '{col}' not found in input", file=sys.stderr)
@@ -68,8 +68,8 @@ def load_gene_pairs(pairs_path: str, min_overlap: float) -> List[Dict]:
                 continue
 
             pair_info = {
-                'ensembl_id': parts[col_idx['ensembl_id']],
-                'cat_id': parts[col_idx['cat_id']],
+                'ensembl_id': parts[col_idx['ensembl_gene_id']],
+                'cat_id': parts[col_idx['cat_gene_id']],
                 'frac_ensembl': e_frac,
                 'frac_cat': c_frac,
                 'max_frac': max(e_frac, c_frac)

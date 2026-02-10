@@ -159,8 +159,8 @@ def load_rbh_pairs(rbh_path: str) -> List[Tuple[str, str, str, str]]:
 
         # Find column indices
         try:
-            ens_id_idx = header.index('ensembl_id')
-            cat_id_idx = header.index('cat_id')
+            ens_id_idx = header.index('ensembl_gene_id')
+            cat_id_idx = header.index('cat_gene_id')
             ens_bio_idx = header.index('ensembl_biotype') if 'ensembl_biotype' in header else None
             cat_bio_idx = header.index('cat_biotype') if 'cat_biotype' in header else None
         except ValueError as e:

@@ -49,8 +49,8 @@ process RUN_COMPARISON {
     if [ ! -f "${assembly_accession}.gene_pairs_rbh.tsv" ]; then
         echo "ERROR: RBH file not created for ${assembly_accession}" >> ${assembly_accession}.log
         # Create empty placeholder to prevent pipeline failure
-        echo -e "ensembl_id\tcat_id" > ${assembly_accession}.gene_pairs_rbh.tsv
-        echo -e "ensembl_id\tcat_id" > ${assembly_accession}.gene_pairs_all.tsv
+        echo -e "ensembl_gene_id\tcat_gene_id" > ${assembly_accession}.gene_pairs_rbh.tsv
+        echo -e "ensembl_gene_id\tcat_gene_id" > ${assembly_accession}.gene_pairs_all.tsv
         exit 1
     fi
     """

@@ -2,7 +2,7 @@ process FETCH_CAT_GFF {
     tag "$sample_name"
     label 'process_download'
     conda 'conda-forge::curl'
-    container 'oras://community.wave.seqera.io/library/curl:8.11.1--d090f1b1e3ed7548'
+    container 'oras://community.wave.seqera.io/library/curl:4bd76f737af7f9c0'
     errorStrategy 'retry'
     maxRetries 3
     publishDir "${params.cat_cache_dir}", mode: 'copy'

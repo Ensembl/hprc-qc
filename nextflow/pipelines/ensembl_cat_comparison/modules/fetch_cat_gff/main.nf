@@ -1,8 +1,8 @@
 process FETCH_CAT_GFF {
     tag "$sample_name"
     label 'process_download'
-    conda 'conda-forge::awscli'
-    container 'oras://community.wave.seqera.io/library/awscli:9678a829f8ce915d'
+    conda 'conda-forge::curl'
+    container 'oras://community.wave.seqera.io/library/curl:8.11.1--d090f1b1e3ed7548'
     errorStrategy 'retry'
     maxRetries 3
     publishDir "${params.cat_cache_dir}", mode: 'copy'
@@ -17,13 +17,9 @@ process FETCH_CAT_GFF {
     """
     set +e
 
-    # Extract base sample name by removing haplotype suffix
-    BASE_SAMPLE=\$(echo "${sample_name}" | sed 's/_pat\$//' | sed 's/_mat\$//' | sed 's/_hap1\$//' | sed 's/_hap2\$//')
+    BASE_URL="https://public.gi.ucsc.edu/~pnhebbar/share/hprc/catv2.0_genes"
 
-    # Try both HPRC and HPRC_PLUS paths
-    S3_PATHS="s3://human-pangenomics/working/HPRC/\${BASE_SAMPLE}/assemblies/release2/annotation/cat s3://human-pangenomics/working/HPRC_PLUS/\${BASE_SAMPLE}/assemblies/release2/annotation/cat"
-
-    # Get list of alternative sample names (both pat/mat and hap1/hap2)
+    # Get list of sample name variants (both pat/mat and hap1/hap2)
     SAMPLE_NAMES="${sample_name}"
     if echo "${sample_name}" | grep -q "_pat\$"; then
         ALT_NAME=\$(echo "${sample_name}" | sed 's/_pat\$/_hap1/')
@@ -39,34 +35,26 @@ process FETCH_CAT_GFF {
         SAMPLE_NAMES="${sample_name} \${ALT_NAME}"
     fi
 
-    # Try different version patterns (most recent first)
-    VERSIONS="v1.1.0 v1.0.1 v1.0.0"
+    echo "Downloading CAT v2.0 GFF for ${sample_name}" >&2
 
-    # Try each combination of S3 path, sample name, and version
-    for S3_PATH in \${S3_PATHS}; do
-        echo "Searching for CAT GFF in \${S3_PATH}" >&2
-        for SAMPLE_VAR in \${SAMPLE_NAMES}; do
-            for VERSION in \${VERSIONS}; do
-                CAT_FILE="\${SAMPLE_VAR}_hprc_r2_\${VERSION}_cat_v1.1.gff3.gz"
-                echo "Trying: \${CAT_FILE}" >&2
+    # Try each sample name variant
+    for SAMPLE_VAR in \${SAMPLE_NAMES}; do
+        CAT_FILE="\${SAMPLE_VAR}_CAT_v2.0.gff3.gz"
+        URL="\${BASE_URL}/\${CAT_FILE}"
+        echo "Trying: \${URL}" >&2
 
-                if aws s3 cp \${S3_PATH}/\${CAT_FILE} ${sample_name}_cat.gff3.gz --no-sign-request 2>/dev/null; then
-                    if [ -f "${sample_name}_cat.gff3.gz" ] && [ -s "${sample_name}_cat.gff3.gz" ]; then
-                        echo "Successfully downloaded: \${CAT_FILE} from \${S3_PATH}" >&2
-                        exit 0
-                    fi
-                fi
-            done
-        done
+        if curl -fsSL -o ${sample_name}_cat.gff3.gz "\${URL}" 2>/dev/null; then
+            if [ -f "${sample_name}_cat.gff3.gz" ] && [ -s "${sample_name}_cat.gff3.gz" ]; then
+                echo "Successfully downloaded: \${CAT_FILE}" >&2
+                exit 0
+            fi
+        fi
     done
 
-    # If nothing worked, list available files and exit
+    # If nothing worked, exit with error
     echo "ERROR: Failed to download CAT GFF for ${sample_name}" >&2
-    echo "Tried all combinations of paths (HPRC, HPRC_PLUS), sample names (\${SAMPLE_NAMES}), and versions (\${VERSIONS})" >&2
-    for S3_PATH in \${S3_PATHS}; do
-        echo "Listing available files in \${S3_PATH}:" >&2
-        aws s3 ls \${S3_PATH}/ --no-sign-request >&2 || echo "  (path does not exist)" >&2
-    done
+    echo "Tried sample name variants: \${SAMPLE_NAMES}" >&2
+    echo "Expected URL pattern: \${BASE_URL}/{sample}_CAT_v2.0.gff3.gz" >&2
     exit 1
     """
 

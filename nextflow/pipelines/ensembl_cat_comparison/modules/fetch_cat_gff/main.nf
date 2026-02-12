@@ -11,7 +11,7 @@ process FETCH_CAT_GFF {
     tuple val(assembly_accession), val(sample_name)
 
     output:
-    tuple val(assembly_accession), val(sample_name), path("*.gff3.gz"), emit: gff
+    tuple val(assembly_accession), val(sample_name), path("*.gff3.gz", optional: true), emit: gff
 
     script:
     """
@@ -51,11 +51,10 @@ process FETCH_CAT_GFF {
         fi
     done
 
-    # If nothing worked, exit with error
-    echo "ERROR: Failed to download CAT GFF for ${sample_name}" >&2
+    # If nothing worked, log warning and exit gracefully (no output file produced)
+    echo "WARNING: CAT GFF not found for ${sample_name}, skipping" >&2
     echo "Tried sample name variants: \${SAMPLE_NAMES}" >&2
-    echo "Expected URL pattern: \${BASE_URL}/{sample}_CAT_v2.0.gff3.gz" >&2
-    exit 1
+    exit 0
     """
 
     stub:

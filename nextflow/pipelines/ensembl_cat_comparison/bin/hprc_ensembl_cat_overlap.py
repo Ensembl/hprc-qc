@@ -406,7 +406,7 @@ def compare_intron_chains(ref_chain: List[Tuple[int, int]], qry_chain: List[Tupl
     return 'None'
 
 def classify_overlap_type(e_frac: float, c_frac: float) -> str:
-    """Classifies the type of overlap based on coverage fractions."""
+    """Classifies the type of overlap based on coverage fractions (legacy simple version)."""
     if e_frac >= 0.9 and c_frac >= 0.9:
         return 'Full-length concordant'
     elif e_frac >= 0.9 and c_frac < 0.9:
@@ -417,6 +417,106 @@ def classify_overlap_type(e_frac: float, c_frac: float) -> str:
         return 'Partial'
     else:
         return 'Tiny'
+
+
+def classify_overlap_detailed(e_frac: float, c_frac: float,
+                               e_start: int, e_end: int,
+                               c_start: int, c_end: int,
+                               strand: str = '+') -> str:
+    """
+    Detailed classification of overlap between Ensembl and CAT gene models.
+
+    Categories:
+    - Identical: >=99% coverage both ways
+    - Near-identical: 95-99% coverage both ways
+    - High concordance: 90-95% coverage both ways
+    - CAT 5' extended: Ensembl well-covered, CAT extends at 5' end
+    - CAT 3' extended: Ensembl well-covered, CAT extends at 3' end
+    - CAT both extended: Ensembl well-covered, CAT extends both ends
+    - Ensembl 5' extended: CAT well-covered, Ensembl extends at 5' end
+    - Ensembl 3' extended: CAT well-covered, Ensembl extends at 3' end
+    - Ensembl both extended: CAT well-covered, Ensembl extends both ends
+    - Moderate overlap: 50-90% coverage for better-covered annotation
+    - Low overlap: 10-50% coverage
+    - Minimal overlap: <10% coverage
+    """
+    # Concordance tiers (high agreement both ways)
+    if e_frac >= 0.99 and c_frac >= 0.99:
+        return 'Identical'
+    if e_frac >= 0.95 and c_frac >= 0.95:
+        return 'Near-identical'
+    if e_frac >= 0.90 and c_frac >= 0.90:
+        return 'High concordance'
+
+    # Extension patterns - one annotation is well-covered, the other partially
+    # This means the partially-covered one is LONGER (extended)
+
+    # Determine 5'/3' based on strand
+    if strand == '-':
+        # On minus strand, genomic 5' is higher coordinate
+        extends_5prime_cat = c_end > e_end
+        extends_3prime_cat = c_start < e_start
+        extends_5prime_ens = e_end > c_end
+        extends_3prime_ens = e_start < c_start
+    else:
+        # On plus strand (or unknown), genomic 5' is lower coordinate
+        extends_5prime_cat = c_start < e_start
+        extends_3prime_cat = c_end > e_end
+        extends_5prime_ens = e_start < c_start
+        extends_3prime_ens = e_end > c_end
+
+    # CAT is extended (Ensembl well-covered >=90%, CAT partial 50-90%)
+    if e_frac >= 0.90 and 0.50 <= c_frac < 0.90:
+        if extends_5prime_cat and extends_3prime_cat:
+            return 'CAT both extended'
+        elif extends_5prime_cat:
+            return 'CAT 5-prime extended'
+        elif extends_3prime_cat:
+            return 'CAT 3-prime extended'
+        return 'CAT extended'
+
+    # Ensembl is extended (CAT well-covered >=90%, Ensembl partial 50-90%)
+    if c_frac >= 0.90 and 0.50 <= e_frac < 0.90:
+        if extends_5prime_ens and extends_3prime_ens:
+            return 'Ensembl both extended'
+        elif extends_5prime_ens:
+            return 'Ensembl 5-prime extended'
+        elif extends_3prime_ens:
+            return 'Ensembl 3-prime extended'
+        return 'Ensembl extended'
+
+    # Partial overlaps (neither is well-covered)
+    max_frac = max(e_frac, c_frac)
+    if max_frac >= 0.50:
+        return 'Moderate overlap'
+    if max_frac >= 0.10:
+        return 'Low overlap'
+
+    return 'Minimal overlap'
+
+
+def compute_coordinate_diffs(e_start: int, e_end: int, c_start: int, c_end: int, strand: str = '+') -> dict:
+    """
+    Compute 5' and 3' coordinate differences between Ensembl and CAT genes.
+
+    Positive values mean CAT extends beyond Ensembl at that end.
+    Negative values mean Ensembl extends beyond CAT at that end.
+
+    Returns dict with: diff_5prime, diff_3prime (in bp)
+    """
+    if strand == '-':
+        # Minus strand: 5' is at higher coordinate
+        diff_5prime = c_end - e_end  # positive if CAT extends 5'
+        diff_3prime = e_start - c_start  # positive if CAT extends 3'
+    else:
+        # Plus strand: 5' is at lower coordinate
+        diff_5prime = e_start - c_start  # positive if CAT extends 5'
+        diff_3prime = c_end - e_end  # positive if CAT extends 3'
+
+    return {
+        'diff_5prime': diff_5prime,
+        'diff_3prime': diff_3prime
+    }
 
 def analyze_transcript_concordance(
     gene_pairs_df: pd.DataFrame, 
@@ -571,16 +671,33 @@ def compute_overlaps_aggregated(
         join_df = pd.DataFrame()
         
     spatial_data = []
-    
+
     if not join_df.empty:
         # Aggregate by Gene Pair -> Sum Overlap
         grp = join_df.groupby(['ensembl_id', 'cat_id'])
-        
+
         for (eid, cid), g in grp:
             total_overlap = g['Overlap'].sum()
             e_len = g['ensembl_length'].iloc[0]
             c_len = g['cat_length'].iloc[0]
-            
+
+            # Get gene coordinates (use first row - should be consistent within gene)
+            e_start = g['Start'].iloc[0]
+            e_end = g['End'].iloc[0]
+            # CAT coordinates have _b suffix from PyRanges join
+            c_start = g['Start_b'].iloc[0] if 'Start_b' in g.columns else g['Start'].iloc[0]
+            c_end = g['End_b'].iloc[0] if 'End_b' in g.columns else g['End'].iloc[0]
+            strand = g['Strand'].iloc[0] if 'Strand' in g.columns else '+'
+
+            e_frac = total_overlap / e_len if e_len > 0 else 0
+            c_frac = total_overlap / c_len if c_len > 0 else 0
+
+            # Compute detailed classification
+            detailed_class = classify_overlap_detailed(e_frac, c_frac, e_start, e_end, c_start, c_end, strand)
+
+            # Compute coordinate differences
+            coord_diffs = compute_coordinate_diffs(e_start, e_end, c_start, c_end, strand)
+
             spatial_data.append({
                 'ensembl_id': eid,
                 'cat_id': cid,
@@ -591,11 +708,20 @@ def compute_overlaps_aggregated(
                 'cat_biotype': g['cat_biotype'].iloc[0],
                 'ensembl_name': g['ensembl_name'].iloc[0],
                 'cat_name': g.get('cat_name', pd.Series([None]*len(g))).iloc[0],
-                'frac_ensembl_covered': total_overlap / e_len if e_len > 0 else 0,
-                'frac_cat_covered': total_overlap / c_len if c_len > 0 else 0,
-                'is_spatial': True
+                'frac_ensembl_covered': e_frac,
+                'frac_cat_covered': c_frac,
+                'is_spatial': True,
+                # New fields for detailed analysis
+                'ensembl_start': e_start,
+                'ensembl_end': e_end,
+                'cat_start': c_start,
+                'cat_end': c_end,
+                'strand': strand,
+                'classification_detailed': detailed_class,
+                'diff_5prime': coord_diffs['diff_5prime'],
+                'diff_3prime': coord_diffs['diff_3prime']
             })
-            
+
     spatial_df = pd.DataFrame(spatial_data)
     
     # 2. Name Match
@@ -630,7 +756,9 @@ def compute_overlaps_aggregated(
     if spatial_df.empty:
         spatial_df = pd.DataFrame(columns=[
             'ensembl_id', 'cat_id', 'overlap_bp', 'frac_ensembl_covered', 'frac_cat_covered',
-            'ensembl_length', 'cat_length', 'ensembl_biotype', 'cat_biotype', 'ensembl_name', 'cat_name', 'is_spatial'
+            'ensembl_length', 'cat_length', 'ensembl_biotype', 'cat_biotype', 'ensembl_name', 'cat_name', 'is_spatial',
+            'ensembl_start', 'ensembl_end', 'cat_start', 'cat_end', 'strand',
+            'classification_detailed', 'diff_5prime', 'diff_3prime'
         ])
 
     # Convert spatial to dict for merge logic to be clean
@@ -655,21 +783,43 @@ def compute_overlaps_aggregated(
                 d['frac_cat_covered'] = 0.0
                 d['is_spatial'] = False
                 d['is_name_match'] = True
+                # Default values for coordinate fields (no spatial overlap)
+                d['ensembl_start'] = None
+                d['ensembl_end'] = None
+                d['cat_start'] = None
+                d['cat_end'] = None
+                d['strand'] = None
+                d['classification_detailed'] = 'Name match only'
+                d['diff_5prime'] = None
+                d['diff_3prime'] = None
                 merged_rows[k] = d
-                
+
     final_df = pd.DataFrame(list(merged_rows.values()))
-    
+
     if not final_df.empty:
-         # Fill NaNs
+        # Fill NaNs
         final_df['is_spatial'] = final_df['is_spatial'].fillna(False)
         final_df['overlap_bp'] = final_df['overlap_bp'].fillna(0)
-        
+
+        # Legacy classification (simple categories for backward compatibility)
         final_df['classification'] = final_df.apply(
-            lambda r: classify_overlap_type(r['frac_ensembl_covered'], r['frac_cat_covered']) 
-                      if r['is_spatial'] and r['overlap_bp'] > 0 
+            lambda r: classify_overlap_type(r['frac_ensembl_covered'], r['frac_cat_covered'])
+                      if r['is_spatial'] and r['overlap_bp'] > 0
                       else ('Name match, no overlap' if r['is_name_match'] else 'None'),
             axis=1
         )
+
+        # Ensure classification_detailed is set for all rows
+        if 'classification_detailed' not in final_df.columns:
+            final_df['classification_detailed'] = None
+        final_df['classification_detailed'] = final_df['classification_detailed'].fillna(
+            final_df.apply(
+                lambda r: 'Name match only' if (not r['is_spatial'] and r['is_name_match'])
+                          else ('No overlap' if not r['is_spatial'] else r.get('classification_detailed', 'Unknown')),
+                axis=1
+            )
+        )
+
     return final_df
 
 def compute_rbh(overlaps_df: pd.DataFrame) -> pd.DataFrame:
@@ -1001,6 +1151,7 @@ def main():
     biotype_records = []
     gene_overlap_records = []
     transcript_concordance_records = []
+    unmatched_gene_records = []
     
     logger.info(f"Processing {len(merged_targets)} assemblies...")
     
@@ -1098,12 +1249,25 @@ def main():
         n_cat_with_overlap = 0
         mean_frac_ensembl = 0.0
         mean_frac_cat = 0.0
-        
-        multi_ensembl_matches = 0 # Ensembl genes matching >1 CAT gene
-        multi_cat_matches = 0     # CAT genes matching >1 Ensembl gene
-        
+
+        multi_ensembl_matches = 0  # Ensembl genes matching >1 CAT gene
+        multi_cat_matches = 0      # CAT genes matching >1 Ensembl gene
+
         rbh_count = 0
-        
+
+        # Bidirectional stats - will be populated below
+        n_ensembl_no_overlap = n_ensembl
+        n_cat_no_overlap = n_cat
+        n_ensembl_no_overlap_pc = 0  # protein_coding
+        n_ensembl_no_overlap_lnc = 0  # lncRNA
+        n_cat_no_overlap_pc = 0
+        n_cat_no_overlap_lnc = 0
+        n_ensembl_with_rbh = 0
+        n_cat_with_rbh = 0
+
+        # Classification counts
+        classification_counts = {}
+
         if not overlaps_df.empty:
             # RBH
             rbh_df = compute_rbh(overlaps_df)
@@ -1122,11 +1286,21 @@ def main():
             # Count how many CAT IDs per Ensembl ID
             e_counts = overlaps_df.groupby('ensembl_id')['cat_id'].nunique()
             multi_ensembl_matches = (e_counts > 1).sum()
-            
+
             # Count how many Ensembl IDs per CAT ID
             c_counts = overlaps_df.groupby('cat_id')['ensembl_id'].nunique()
             multi_cat_matches = (c_counts > 1).sum()
-            
+
+            # Bidirectional stats: genes WITH RBH matches
+            rbh_ensembl_ids = set(overlaps_df[overlaps_df['is_rbh']]['ensembl_id'].unique())
+            rbh_cat_ids = set(overlaps_df[overlaps_df['is_rbh']]['cat_id'].unique())
+            n_ensembl_with_rbh = len(rbh_ensembl_ids)
+            n_cat_with_rbh = len(rbh_cat_ids)
+
+            # Detailed classification counts
+            if 'classification_detailed' in overlaps_df.columns:
+                classification_counts = overlaps_df['classification_detailed'].value_counts().to_dict()
+
             # Prepare gene overlap records
             # Ensure safe access to columns
             for _, r in overlaps_df.iterrows():
@@ -1141,7 +1315,12 @@ def main():
                     'frac_ensembl_covered': r['frac_ensembl_covered'],
                     'frac_cat_covered': r['frac_cat_covered'],
                     'classification': r['classification'],
-                    'is_rbh': r['is_rbh']
+                    'classification_detailed': r.get('classification_detailed', ''),
+                    'is_rbh': r['is_rbh'],
+                    # New coordinate fields
+                    'diff_5prime': r.get('diff_5prime', None),
+                    'diff_3prime': r.get('diff_3prime', None),
+                    'strand': r.get('strand', '')
                 }
                 gene_overlap_records.append(rec)
                 
@@ -1166,7 +1345,70 @@ def main():
         biotype_df['assembly_accession'] = accession
         biotype_df['sample_name'] = sample
         biotype_records.extend(biotype_df.to_dict('records'))
-        
+
+        # Compute unmatched genes (bidirectional)
+        all_ensembl_ids = set(ensembl_genes.df['ensembl_id'].unique())
+        all_cat_ids = set(cat_genes.df['cat_id'].unique())
+
+        if not overlaps_df.empty:
+            matched_ensembl_ids = set(overlaps_df['ensembl_id'].unique())
+            matched_cat_ids = set(overlaps_df['cat_id'].unique())
+        else:
+            matched_ensembl_ids = set()
+            matched_cat_ids = set()
+
+        unmatched_ensembl_ids = all_ensembl_ids - matched_ensembl_ids
+        unmatched_cat_ids = all_cat_ids - matched_cat_ids
+
+        n_ensembl_no_overlap = len(unmatched_ensembl_ids)
+        n_cat_no_overlap = len(unmatched_cat_ids)
+
+        # Unmatched by biotype
+        ensembl_df = ensembl_genes.df
+        cat_df = cat_genes.df
+
+        unmatched_ensembl_df = ensembl_df[ensembl_df['ensembl_id'].isin(unmatched_ensembl_ids)]
+        unmatched_cat_df = cat_df[cat_df['cat_id'].isin(unmatched_cat_ids)]
+
+        n_ensembl_no_overlap_pc = len(unmatched_ensembl_df[
+            unmatched_ensembl_df['ensembl_biotype'] == 'protein_coding'
+        ]) if not unmatched_ensembl_df.empty else 0
+        n_ensembl_no_overlap_lnc = len(unmatched_ensembl_df[
+            unmatched_ensembl_df['ensembl_biotype'].str.contains('lnc', case=False, na=False)
+        ]) if not unmatched_ensembl_df.empty else 0
+
+        n_cat_no_overlap_pc = len(unmatched_cat_df[
+            unmatched_cat_df['cat_biotype'] == 'protein_coding'
+        ]) if not unmatched_cat_df.empty else 0
+        n_cat_no_overlap_lnc = len(unmatched_cat_df[
+            unmatched_cat_df['cat_biotype'].str.contains('lnc', case=False, na=False)
+        ]) if not unmatched_cat_df.empty else 0
+
+        # Collect unmatched gene records
+        for _, g in unmatched_ensembl_df.iterrows():
+            unmatched_gene_records.append({
+                'assembly_accession': accession,
+                'sample_name': sample,
+                'gene_id': g['ensembl_id'],
+                'source': 'ensembl',
+                'biotype': g.get('ensembl_biotype', ''),
+                'gene_name': g.get('ensembl_name', ''),
+                'length': g.get('ensembl_length', 0),
+                'reason': 'no_cat_overlap'
+            })
+
+        for _, g in unmatched_cat_df.iterrows():
+            unmatched_gene_records.append({
+                'assembly_accession': accession,
+                'sample_name': sample,
+                'gene_id': g['cat_id'],
+                'source': 'cat',
+                'biotype': g.get('cat_biotype', ''),
+                'gene_name': g.get('cat_name', ''),
+                'length': g.get('cat_length', 0),
+                'reason': 'no_ensembl_overlap'
+            })
+
         # Summary Record
         summary_records.append({
             'assembly_accession': accession,
@@ -1181,7 +1423,16 @@ def main():
             'n_ensembl_genes_multi_mapped': multi_ensembl_matches,
             'n_cat_genes_multi_mapped': multi_cat_matches,
             'mean_fraction_ensembl_covered': mean_frac_ensembl,
-            'mean_fraction_cat_covered': mean_frac_cat
+            'mean_fraction_cat_covered': mean_frac_cat,
+            # New bidirectional stats
+            'n_ensembl_with_rbh': n_ensembl_with_rbh,
+            'n_cat_with_rbh': n_cat_with_rbh,
+            'n_ensembl_no_overlap': n_ensembl_no_overlap,
+            'n_cat_no_overlap': n_cat_no_overlap,
+            'n_ensembl_no_overlap_protein_coding': n_ensembl_no_overlap_pc,
+            'n_ensembl_no_overlap_lncRNA': n_ensembl_no_overlap_lnc,
+            'n_cat_no_overlap_protein_coding': n_cat_no_overlap_pc,
+            'n_cat_no_overlap_lncRNA': n_cat_no_overlap_lnc
         })
 
     # 5. Write Outputs
@@ -1224,6 +1475,11 @@ def main():
         bio_out = f"{args.output_prefix}.biotype_stats.tsv"
         pd.DataFrame(biotype_records).to_csv(bio_out, sep='\t', index=False)
         logger.info(f"Written biotype stats to {bio_out}")
+
+    if unmatched_gene_records:
+        unmatched_out = f"{args.output_prefix}.unmatched_genes.tsv"
+        pd.DataFrame(unmatched_gene_records).to_csv(unmatched_out, sep='\t', index=False)
+        logger.info(f"Written unmatched genes to {unmatched_out}")
 
     logger.info("Done.")
 

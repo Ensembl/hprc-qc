@@ -192,10 +192,12 @@ def assess_pair(ensembl_cds: List[Dict], cat_cds: List[Dict],
         'has_cat_cds': len(cat_cds) > 0,
         'cds_length_ensembl': 0,
         'cds_length_cat': 0,
+        'percent_coverage': 0.0,
         'start_codon_match': False,
         'stop_codon_match': False,
         'frameshift_detected': False,
-        'length_difference': 0
+        'length_difference': 0,
+        'classification': 'No_CDS'
     }
 
     if not ensembl_cds or not cat_cds:
@@ -208,23 +210,69 @@ def assess_pair(ensembl_cds: List[Dict], cat_cds: List[Dict],
     result['cds_length_ensembl'] = e_len
     result['cds_length_cat'] = c_len
     result['length_difference'] = abs(e_len - c_len)
-
-    # Check for frameshift (length difference not divisible by 3)
-    if result['length_difference'] > 0 and result['length_difference'] % 3 != 0:
-        result['frameshift_detected'] = True
+    
+    if e_len > 0:
+        result['percent_coverage'] = (c_len / e_len) * 100.0
 
     # Get start/stop positions
     e_start, e_stop = get_start_stop_positions(ensembl_cds)
     c_start, c_stop = get_start_stop_positions(cat_cds)
 
+    # Check matches
+    start_match = False
+    stop_match = False
+    
     if e_start is not None and c_start is not None:
         if abs(e_start - c_start) <= tolerance:
-            result['start_codon_match'] = True
-
+            start_match = True
+    
     if e_stop is not None and c_stop is not None:
         if abs(e_stop - c_stop) <= tolerance:
-            result['stop_codon_match'] = True
+            stop_match = True
 
+    result['start_codon_match'] = start_match
+    result['stop_codon_match'] = stop_match
+
+    # CLASSIFICATION LOGIC
+    # --------------------
+    
+    # Check for Frameshift first (Length diff not divisible by 3)
+    # Note: A frameshift might accompany truncation, but it's a severe defect to note.
+    # We will flag it, but the main classification might still be "Truncation" if length is much shorter.
+    # However, user asked for "Frameshift" as a category if out-of-frame.
+    is_frameshift = (result['length_difference'] % 3 != 0)
+    result['frameshift_detected'] = is_frameshift
+
+    if start_match and stop_match:
+        if e_len == c_len:
+            result['classification'] = 'Full_Match'
+        elif is_frameshift:
+            result['classification'] = 'Internal_Frameshift'
+        else:
+            # Lengths differ but starts/stops match -> Internal Indel (in-frame)
+            result['classification'] = 'Internal_Indel'
+            
+    elif not start_match and not stop_match:
+        result['classification'] = 'Complex_Mismatch'
+        
+    elif not start_match and stop_match:
+        # Stop matches, Start differs
+        if c_len < e_len:
+            result['classification'] = 'N_term_Truncation'
+        else:
+            result['classification'] = 'N_term_Extension'
+            
+    elif start_match and not stop_match:
+        # Start matches, Stop differs
+        if c_len < e_len:
+            result['classification'] = 'C_term_Truncation'
+        else:
+            result['classification'] = 'C_term_Extension'
+
+    # Refine Frameshift: If it's a truncation AND a frameshift, maybe call it valid truncation?
+    # Usually "Truncation" implies just missing sequence, but if it causes frameshift it's bad.
+    # We will keep the classification as Truncation but the boolean flag confirms frameshift.
+    
     return result
 
 
@@ -262,6 +310,8 @@ def main():
             'cat_biotype',
             'has_ensembl_cds',
             'has_cat_cds',
+            'classification',
+            'percent_coverage',
             'cds_length_ensembl',
             'cds_length_cat',
             'length_difference',
@@ -286,6 +336,8 @@ def main():
                 cat_bio,
                 str(metrics['has_ensembl_cds']),
                 str(metrics['has_cat_cds']),
+                metrics['classification'],
+                f"{metrics['percent_coverage']:.2f}",
                 str(metrics['cds_length_ensembl']),
                 str(metrics['cds_length_cat']),
                 str(metrics['length_difference']),

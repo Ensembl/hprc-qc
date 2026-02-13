@@ -18,6 +18,8 @@ import argparse
 import gzip
 import sys
 from typing import Dict, Set
+from urllib.parse import unquote
+
 
 
 def parse_args():
@@ -27,7 +29,24 @@ def parse_args():
     parser.add_argument("--output", required=True, help="Output TSV file")
     parser.add_argument("--assembly-accession", required=True, help="Assembly accession")
     parser.add_argument("--sample-name", required=True, help="Sample name")
+    parser.add_argument("--ensg-lookup", required=False, help="Path to TSV mapping transcript ID to ENSG ID")
     return parser.parse_args()
+
+
+def extract_gene_name(attrs: Dict[str, str]) -> str:
+    """Extract gene name, handling Ensembl's encoded description format."""
+    for key in ['Name', 'gene_name', 'gene']:
+        if key in attrs:
+            return attrs[key]
+    
+    desc = attrs.get('description', '')
+    if desc:
+        decoded = unquote(desc)
+        for part in decoded.split(';'):
+            if part.startswith('parent_gene_display_xref='):
+                return part.split('=', 1)[1]
+    
+    return None
 
 
 def open_maybe_gzip(path: str):
@@ -47,7 +66,25 @@ def parse_attributes(attr_string: str) -> Dict[str, str]:
     return attrs
 
 
-def load_named_genes(gff_path: str) -> Dict[str, Dict]:
+def load_ensg_lookup(path: str) -> Dict[str, str]:
+    """Load transcript ID -> ENSG ID mapping from TSV."""
+    lookup = {}
+    if not path:
+        return lookup
+        
+    print(f"Loading ENSG lookup from {path}", file=sys.stderr)
+    with open_maybe_gzip(path) as f:
+        for line in f:
+            if line.startswith('#'):
+                continue
+            parts = line.strip().split('\t')
+            if len(parts) >= 2:
+                # trans_id -> ensg_id
+                lookup[parts[0]] = parts[1]
+    return lookup
+
+
+def load_named_genes(gff_path: str, ensg_lookup: Dict[str, str] = None) -> Dict[str, Dict]:
     """
     Load genes with names from GFF.
 
@@ -55,6 +92,7 @@ def load_named_genes(gff_path: str) -> Dict[str, Dict]:
         {gene_name: {id, biotype, chrom, start, end}}
     """
     named_genes = {}
+    ensg_lookup = ensg_lookup or {}
 
     with open_maybe_gzip(gff_path) as f:
         for line in f:
@@ -73,13 +111,33 @@ def load_named_genes(gff_path: str) -> Dict[str, Dict]:
 
             attrs = parse_attributes(parts[8])
 
-            # Get gene name (try multiple possible attribute names)
-            gene_name = None
-            for key in ['Name', 'gene_name', 'gene']:
-                if key in attrs:
-                    gene_name = attrs[key]
-                    break
+            gene_name = extract_gene_name(attrs)
+            
+            # If no gene name, try to use lookup table with transcript ID
+            if not gene_name:
+                # Try getting transcript ID from ID or Parent or other attributes
+                # In GFF3 'gene' feature, ID is usually the gene ID, but sometimes features act as transcripts
+                # For CAT/Ensembl, if it's a 'gene' feature, ID *should* be gene ID.
+                # But user request implies we might have transcript IDs here or need to look up by *some* ID.
+                # "transcript stable id in col 1 and ensg in col 2"
+                # If this feature is a gene, we might need to check if its ID is in the lookup?
+                # Or maybe the feature is actually a transcript masked as gene?
+                # Let's check ID against lookup
+                feature_id = attrs.get('ID', '').replace('gene:', '').replace('transcript:', '')
+                if feature_id in ensg_lookup:
+                    gene_name = ensg_lookup[feature_id]
 
+            if not gene_name:
+                # Fall back to stable ID so nothing is invisible
+                gene_name = attrs.get('gene_id', attrs.get('ID', '').replace('gene:', ''))
+                
+                # Check if this fallback ID is in lookup (e.g. if it was a transcript ID)
+                if gene_name in ensg_lookup:
+                    gene_name = ensg_lookup[gene_name]
+                    
+                if not gene_name:
+                    continue
+                
             if not gene_name:
                 continue  # Skip genes without names
 
@@ -104,13 +162,15 @@ def load_named_genes(gff_path: str) -> Dict[str, Dict]:
 
 def main():
     args = parse_args()
+    
+    ensg_lookup = load_ensg_lookup(args.ensg_lookup)
 
     print(f"Loading Ensembl named genes from {args.ensembl_gff}", file=sys.stderr)
-    ensembl_genes = load_named_genes(args.ensembl_gff)
+    ensembl_genes = load_named_genes(args.ensembl_gff, ensg_lookup)
     print(f"Found {len(ensembl_genes)} named genes in Ensembl", file=sys.stderr)
 
     print(f"Loading CAT named genes from {args.cat_gff}", file=sys.stderr)
-    cat_genes = load_named_genes(args.cat_gff)
+    cat_genes = load_named_genes(args.cat_gff, ensg_lookup)
     print(f"Found {len(cat_genes)} named genes in CAT", file=sys.stderr)
 
     # Get all unique gene names

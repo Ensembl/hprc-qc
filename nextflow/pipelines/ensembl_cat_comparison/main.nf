@@ -26,6 +26,7 @@ nextflow.enable.dsl = 2
 
 // Default parameters - MUST be defined before includes to avoid warnings
 params.input = null
+params.ensg_lookup = null
 params.outdir = './results'
 params.ensembl_cache_dir = './cache/ensembl'
 params.cat_cache_dir = './cache/cat'
@@ -53,7 +54,9 @@ def helpMessage() {
     Optional arguments:
         --ensembl_cache_dir   Cache directory for Ensembl GFFs (default: ${params.ensembl_cache_dir})
         --cat_cache_dir       Cache directory for CAT GFFs (default: ${params.cat_cache_dir})
+
         --assembly_reports_dir  Directory containing assembly reports (optional)
+        --ensg_lookup         Path to transcript ID to ENSG ID lookup table (required)
         --comparison_script   Path to comparison script (default: auto-detected)
         --max_assemblies      Limit number of assemblies (for testing, e.g., --max_assemblies 3)
 
@@ -74,6 +77,14 @@ if (params.help) {
 if (!params.input) {
     log.error "ERROR: --input parameter is required"
     helpMessage()
+    exit 1
+}
+if (!params.ensg_lookup) {
+    log.error "ERROR: --ensg_lookup parameter is required"
+    helpMessage()
+    exit 1
+} else if (!file(params.ensg_lookup).exists()) {
+    log.error "ERROR: ENSG lookup file not found at: ${params.ensg_lookup}"
     exit 1
 }
 
@@ -110,8 +121,11 @@ workflow {
         """
     }
 
+    // Create channel for lookup file
+    ensg_lookup_ch = Channel.fromPath(params.ensg_lookup, checkIfExists: true)
+
     // Run comparison workflow
-    ENSEMBL_CAT_COMPARISON(assemblies_ch)
+    ENSEMBL_CAT_COMPARISON(assemblies_ch, ensg_lookup_ch)
 
     // Collect results
     ENSEMBL_CAT_COMPARISON.out.rbh.collect().view { results ->

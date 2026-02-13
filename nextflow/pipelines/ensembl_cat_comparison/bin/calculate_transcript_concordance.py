@@ -125,49 +125,135 @@ def load_rbh_pairs(rbh_path: str) -> List[Tuple[str, str]]:
     return pairs
 
 
-def compare_exon_structures(exons1: List[Tuple[int, int]],
-                            exons2: List[Tuple[int, int]],
-                            tolerance: int = 0) -> str:
+def get_introns(exons: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
     """
-    Compare two exon structures.
+    Derive introns from sorted exon list.
+    Returns list of (start, end) tuples for introns.
+    Intron start = exon1 end + 1
+    Intron end = exon2 start - 1
+    """
+    introns = []
+    if len(exons) < 2:
+        return introns
+        
+    for i in range(len(exons) - 1):
+        intron_start = exons[i][1] + 1
+        intron_end = exons[i+1][0] - 1
+        introns.append((intron_start, intron_end))
+    return introns
 
-    Returns:
-        'exact' - all exons match exactly (within tolerance)
-        'partial' - some exons match
-        'none' - no matching structure
-    """
+
+def calculate_jaccard(exons1: List[Tuple[int, int]], exons2: List[Tuple[int, int]]) -> float:
+    """Calculate Jaccard Index of exon intervals at base-pair level."""
     if not exons1 or not exons2:
-        return 'none'
+        return 0.0
+        
+    # Simple set-based approximation for now, or precise interval calculation?
+    # Precise interval calculation is better.
+    
+    def get_coverage(exons):
+        covered = set()
+        for start, end in exons:
+            covered.update(range(start, end + 1))
+        return covered
 
-    # Convert to sets for comparison
-    set1 = set(exons1)
-    set2 = set(exons2)
+    set1 = get_coverage(exons1)
+    set2 = get_coverage(exons2)
+    
+    intersection = len(set1 & set2)
+    union = len(set1 | set2)
+    
+    return intersection / union if union > 0 else 0.0
 
-    if tolerance == 0:
-        if set1 == set2:
-            return 'exact'
+
+def compare_structures(exons1: List[Tuple[int, int]],
+                       exons2: List[Tuple[int, int]],
+                       tolerance: int = 0) -> Dict:
+    """
+    Compare two transcript structures with detailed classification.
+    """
+    result = {
+        'classification': 'No_Match',
+        'jaccard': 0.0
+    }
+    
+    if not exons1 or not exons2:
+        return result
+
+    # 1. Exact Exon Match
+    # Check sets first for speed (ignoring order/dupes which shouldn't happen)
+    if exons1 == exons2:
+        result['classification'] = 'Exact_Match'
+        result['jaccard'] = 1.0
+        return result
+
+    # Calculate Jaccard
+    result['jaccard'] = calculate_jaccard(exons1, exons2)
+    
+    # 2. Intron Chain Analysis
+    introns1 = get_introns(exons1)
+    introns2 = get_introns(exons2)
+    
+    if not introns1 and not introns2:
+        # Both single-exon. If not exact match (checked above), determine overlap
+        if result['jaccard'] > 0:
+            result['classification'] = 'Single_Exon_Overlap'
+        return result
+
+    if introns1 == introns2:
+        # Introns match exactly, but exons differed (checked above) -> UTR diffs
+        result['classification'] = 'Intron_Match'
+        return result
+        
+    # Check for Subset/Superset
+    set_i1 = set(introns1)
+    set_i2 = set(introns2)
+    
+    if set_i1.issubset(set_i2):
+        result['classification'] = 'Intron_Subset' # 1 is inside 2
+        return result
+    if set_i2.issubset(set_i1):
+        result['classification'] = 'Intron_Superset' # 1 contains 2
+        return result
+        
+    # Check for 5' or 3' Partial Matches (if multi-intron)
+    # We require at least one intron to match to call it a structural match
+    common_introns = set_i1 & set_i2
+    
+    if common_introns:
+        # Determine location of matches
+        # 5' Match: First introns match
+        # 3' Match: Last introns match
+        
+        # Sort to check ends
+        # Note: introns1/2 are already sorted by coordinate. 
+        # But "5' end" depends on Strand!
+        # This function doesn't know strand, assuming logic handles input order consistent with genomic coords.
+        # Arguments passed to this function are genomic sorted. 
+        # So low coord = 5' for forward, 3' for reverse.
+        # We will classify as "Partial_5_Prime" or "Partial_3_Prime" relative to genomic coords first,
+        # and caller can swap label if strand is minus? 
+        # Actually, let's just stick to "Genomic_5_Prime_Match" etc or check simple list ends.
+        
+        match_start = (introns1[0] == introns2[0])
+        match_end = (introns1[-1] == introns2[-1])
+        
+        if match_start and match_end:
+            # Middle differs?
+            result['classification'] = 'Internal_Mismatch'
+        elif match_start:
+            result['classification'] = 'Partial_5_Prime_Match' # Genomic 5'
+        elif match_end:
+            result['classification'] = 'Partial_3_Prime_Match' # Genomic 3'
+        else:
+            result['classification'] = 'Internal_Match' # Some internal introns match
+    
     else:
-        # Check with tolerance
-        all_match = True
-        for e1 in exons1:
-            found = False
-            for e2 in exons2:
-                if abs(e1[0] - e2[0]) <= tolerance and abs(e1[1] - e2[1]) <= tolerance:
-                    found = True
-                    break
-            if not found:
-                all_match = False
-                break
-
-        if all_match and len(exons1) == len(exons2):
-            return 'exact'
-
-    # Check for partial overlap
-    overlap = len(set1 & set2)
-    if overlap > 0:
-        return 'partial'
-
-    return 'none'
+        # No shared introns, but maybe overlap?
+        if result['jaccard'] > 0:
+            result['classification'] = 'Exon_Overlap'
+            
+    return result
 
 
 def calculate_concordance(ensembl_txs: Dict, ensembl_exons: Dict,
@@ -181,53 +267,98 @@ def calculate_concordance(ensembl_txs: Dict, ensembl_exons: Dict,
     n_ensembl = len(e_transcripts)
     n_cat = len(c_transcripts)
 
-    # Find best matches for each Ensembl transcript
-    exact_matches = 0
-    partial_matches = 0
-    matched_ensembl_ids = set()
-    matched_cat_ids = set()
+    # Categories
+    counts = {
+        'Exact_Match': 0,
+        'Intron_Match': 0,
+        'Intron_Subset': 0,
+        'Intron_Superset': 0,
+        'Partial_5_Prime': 0,  # Combined strand-aware
+        'Partial_3_Prime': 0,  # Combined strand-aware
+        'Other_Partial': 0,
+        'No_Match': 0
+    }
+    
+    best_jaccard_sum = 0.0
+    matched_ensembl = set()
 
     for e_tid, e_meta in e_transcripts.items():
         e_exon_list = ensembl_exons.get(e_tid, [])
-
-        best_match = 'none'
-        best_cat_tid = None
+        e_strand = e_meta['strand']
+        
+        best_class = 'No_Match'
+        best_jaccard = 0.0
+        
+        # Priority for "Best Match": Exact > Intron > Superset > Subset > Partials
+        priority = ['Exact_Match', 'Intron_Match', 'Intron_Superset', 'Intron_Subset', 
+                   'Partial_5_Prime_Match', 'Partial_3_Prime_Match', 'Internal_Match', 
+                   'Internal_Mismatch', 'Exon_Overlap', 'Single_Exon_Overlap', 'No_Match']
+        
+        def get_score(cls):
+            try: return priority.index(cls) 
+            except: return 99
 
         for c_tid, c_meta in c_transcripts.items():
             c_exon_list = cat_exons.get(c_tid, [])
+            
+            res = compare_structures(e_exon_list, c_exon_list)
+            cls = res['classification']
+            jac = res['jaccard']
+            
+            if get_score(cls) < get_score(best_class):
+                best_class = cls
+                best_jaccard = jac
+            elif get_score(cls) == get_score(best_class) and jac > best_jaccard:
+                best_jaccard = jac
 
-            match_type = compare_exon_structures(e_exon_list, c_exon_list, tolerance=3)
+        # Post-process strand for partials
+        # compare_structures returns "Partial_5_Prime_Match" referring to Genomic 5' (low coord)
+        # If strand is '-', low coord is 3' end of transcript.
+        final_class = best_class
+        if e_strand == '-':
+            if best_class == 'Partial_5_Prime_Match':
+                final_class = 'Partial_3_Prime' # Genomic 5' is Transcript 3' on minus strand
+            elif best_class == 'Partial_3_Prime_Match':
+                final_class = 'Partial_5_Prime' # Genomic 3' is Transcript 5' on minus strand
+        else:
+            if best_class == 'Partial_5_Prime_Match':
+                final_class = 'Partial_5_Prime'
+            elif best_class == 'Partial_3_Prime_Match':
+                final_class = 'Partial_3_Prime'
+        
+        # Simplify other partials
+        if final_class in ['Internal_Match', 'Internal_Mismatch', 'Exon_Overlap', 'Single_Exon_Overlap']:
+            final_class = 'Other_Partial'
+            
+        if final_class in counts:
+            counts[final_class] += 1
+            matched_ensembl.add(e_tid)
+        elif final_class == 'No_Match':
+            counts['No_Match'] += 1
+        else:
+            # Fallback for anything else (should be mapped above)
+            counts['Other_Partial'] += 1
+            matched_ensembl.add(e_tid)
+            
+        best_jaccard_sum += best_jaccard
 
-            if match_type == 'exact':
-                best_match = 'exact'
-                best_cat_tid = c_tid
-                break
-            elif match_type == 'partial' and best_match != 'exact':
-                best_match = 'partial'
-                best_cat_tid = c_tid
-
-        if best_match == 'exact':
-            exact_matches += 1
-            matched_ensembl_ids.add(e_tid)
-            if best_cat_tid:
-                matched_cat_ids.add(best_cat_tid)
-        elif best_match == 'partial':
-            partial_matches += 1
-            matched_ensembl_ids.add(e_tid)
-            if best_cat_tid:
-                matched_cat_ids.add(best_cat_tid)
-
-    # Calculate concordance rate
-    concordance_rate = exact_matches / n_ensembl if n_ensembl > 0 else 0.0
+    # Calculate concordance rate (Exact matches only)
+    concordance_rate = counts['Exact_Match'] / n_ensembl if n_ensembl > 0 else 0.0
+    avg_jaccard = best_jaccard_sum / n_ensembl if n_ensembl > 0 else 0.0
 
     return {
         'n_ensembl_transcripts': n_ensembl,
         'n_cat_transcripts': n_cat,
-        'n_exact_matches': exact_matches,
-        'n_partial_matches': partial_matches,
-        'n_unmatched_ensembl': n_ensembl - len(matched_ensembl_ids),
-        'n_unmatched_cat': n_cat - len(matched_cat_ids),
-        'transcript_concordance_rate': round(concordance_rate, 4)
+        'n_exact_matches': counts['Exact_Match'],
+        'n_intron_matches': counts['Intron_Match'],
+        'n_subset': counts['Intron_Subset'],
+        'n_superset': counts['Intron_Superset'],
+        'n_partial_5': counts['Partial_5_Prime'],
+        'n_partial_3': counts['Partial_3_Prime'],
+        'n_other_partial': counts['Other_Partial'],
+        'n_unmatched': counts['No_Match'],
+        'transcript_concordance_rate': round(concordance_rate, 4),
+        'avg_jaccard_index': round(avg_jaccard, 4)
     }
 
 
@@ -243,7 +374,7 @@ def main():
     print(f"Loading RBH pairs from {args.rbh_pairs}", file=sys.stderr)
     rbh_pairs = load_rbh_pairs(args.rbh_pairs)
 
-    print(f"Analyzing {len(rbh_pairs)} RBH gene pairs", file=sys.stderr)
+    print(f"Analyzing {len(rbh_pairs)} RBH gene pairs with enhanced logic...", file=sys.stderr)
 
     # Write output
     with open(args.output, 'w') as out:
@@ -256,10 +387,15 @@ def main():
             'n_ensembl_transcripts',
             'n_cat_transcripts',
             'n_exact_matches',
-            'n_partial_matches',
-            'n_unmatched_ensembl',
-            'n_unmatched_cat',
-            'transcript_concordance_rate'
+            'n_intron_matches',
+            'n_subset',
+            'n_superset',
+            'n_partial_5',
+            'n_partial_3',
+            'n_other_partial',
+            'n_unmatched',
+            'transcript_concordance_rate',
+            'avg_jaccard_index'
         ]) + '\n')
 
         # Process each RBH pair
@@ -278,13 +414,18 @@ def main():
                 str(metrics['n_ensembl_transcripts']),
                 str(metrics['n_cat_transcripts']),
                 str(metrics['n_exact_matches']),
-                str(metrics['n_partial_matches']),
-                str(metrics['n_unmatched_ensembl']),
-                str(metrics['n_unmatched_cat']),
-                str(metrics['transcript_concordance_rate'])
+                str(metrics['n_intron_matches']),
+                str(metrics['n_subset']),
+                str(metrics['n_superset']),
+                str(metrics['n_partial_5']),
+                str(metrics['n_partial_3']),
+                str(metrics['n_other_partial']),
+                str(metrics['n_unmatched']),
+                str(metrics['transcript_concordance_rate']),
+                str(metrics['avg_jaccard_index'])
             ]) + '\n')
 
-    print(f"Wrote transcript concordance metrics to {args.output}", file=sys.stderr)
+    print(f"Wrote enhanced transcript concordance metrics to {args.output}", file=sys.stderr)
 
 
 if __name__ == "__main__":

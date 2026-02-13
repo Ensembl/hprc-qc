@@ -6,6 +6,7 @@ include { MULTI_MAPPING }         from '../../modules/multi_mapping/main'
 workflow QC_METRICS {
     take:
     comparison_results  // Channel of [assembly_accession, sample_name, ensembl_gff, cat_gff, rbh_tsv, all_pairs_tsv]
+    ensg_lookup         // Channel with path to ENSG lookup file
 
     main:
     // Prepare inputs for each QC process
@@ -21,7 +22,7 @@ workflow QC_METRICS {
     // Run QC analyses in parallel
     TRANSCRIPT_CONCORDANCE(qc_inputs.transcript)
     CODING_INTEGRITY(qc_inputs.coding)
-    GENE_PRESENCE(qc_inputs.presence)
+    GENE_PRESENCE(qc_inputs.presence.combine(ensg_lookup))
     MULTI_MAPPING(qc_inputs.multi)
 
     emit:

@@ -7,7 +7,7 @@ process GENE_PRESENCE {
     publishDir "${params.outdir}/qc_metrics/${assembly_accession}", mode: 'copy'
 
     input:
-    tuple val(assembly_accession), val(sample_name), path(ensembl_gff), path(cat_gff)
+    tuple val(assembly_accession), val(sample_name), path(ensembl_gff), path(cat_gff), path(ensg_lookup)
 
     output:
     tuple val(assembly_accession), val(sample_name), path("*_gene_presence.tsv"), emit: metrics
@@ -19,7 +19,8 @@ process GENE_PRESENCE {
         --cat-gff ${cat_gff} \\
         --output ${assembly_accession}_gene_presence.tsv \\
         --assembly-accession ${assembly_accession} \\
-        --sample-name ${sample_name}
+        --sample-name ${sample_name} \\
+        --ensg-lookup ${ensg_lookup}
     """
 
     stub:

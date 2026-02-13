@@ -90,7 +90,8 @@ def analyze_multi_mapping(pairs: List[Dict]) -> Tuple[Dict, Dict]:
     Analyze multi-mapping patterns.
 
     Returns:
-        (ensembl_multi, cat_multi) - dicts mapping gene IDs to their matches
+        (ensembl_multi_info, cat_multi_info)
+        where info is a dict of {gene_id: {'matches': [], 'classification': str, 'total_coverage': float}}
     """
     # Group by gene IDs
     ensembl_matches = defaultdict(list)
@@ -100,30 +101,64 @@ def analyze_multi_mapping(pairs: List[Dict]) -> Tuple[Dict, Dict]:
         ensembl_matches[pair['ensembl_id']].append(pair)
         cat_matches[pair['cat_id']].append(pair)
 
-    # Filter to multi-mapping only
-    ensembl_multi = {eid: matches for eid, matches in ensembl_matches.items() if len(matches) > 1}
-    cat_multi = {cid: matches for cid, matches in cat_matches.items() if len(matches) > 1}
+    # Analyze Ensembl 1-to-many
+    ensembl_multi = {}
+    for eid, matches in ensembl_matches.items():
+        if len(matches) > 1:
+            # Calculate total coverage of the Ensembl gene by all CAT matches
+            # Note: This assumes matches don't overlap each other on the Ensembl gene significantly
+            # For a more accurate sum, we'd need coordinates to merge intervals.
+            # Using simple sum for now as a proxy.
+            total_cov = sum(m['frac_ensembl'] for m in matches)
+            
+            # Classification Logic
+            classification = 'Complex'
+            
+            # Check for Duplication: Multiple matches each fully cover the Ensembl gene
+            # Threshold: > 0.8 coverage per match for at least 2 matches
+            full_matches = sum(1 for m in matches if m['frac_ensembl'] > 0.8)
+            if full_matches >= 2:
+                classification = 'Duplication'
+            elif len(matches) >= 2 and total_cov >= 0.8 and full_matches == 0:
+                 # If collective coverage is high but individual is low -> Split
+                 classification = 'Split'
+            elif total_cov < 0.8:
+                classification = 'Fragmented'
+            
+            ensembl_multi[eid] = {
+                'matches': matches,
+                'classification': classification,
+                'total_coverage': total_cov
+            }
+
+    # Analyze CAT many-to-1 (from CAT perspective, 1 CAT has many Ensembls)
+    cat_multi = {}
+    for cid, matches in cat_matches.items():
+        if len(matches) > 1:
+            total_cov = sum(m['frac_cat'] for m in matches)
+            
+            classification = 'Complex'
+            
+            # Distinguish based on how much of CAT is covered by the sum of matches
+            # If matches tile (Merge), sum(frac_cat) should be close to 1.0
+            # If matches overlap (Collapse/Redundant), sum(frac_cat) will be > 1.0 (e.g. 2.0 for 2 duplicates)
+            
+            if total_cov > 1.5:
+                # The total coverage exceeds 100% significantly, implying matches map to same region
+                classification = 'Collapse'
+            elif total_cov >= 0.8:
+                # The total coverage is ~100%, implying matches tile the gene
+                classification = 'Merge'
+            else:
+                classification = 'Fragmented'
+
+            cat_multi[cid] = {
+                'matches': matches,
+                'classification': classification,
+                'total_coverage': total_cov
+            }
 
     return ensembl_multi, cat_multi
-
-
-def classify_match_type(matches: List[Dict], source_id_key: str) -> str:
-    """
-    Classify the type of multi-mapping.
-
-    Returns:
-        'tandem' - all on same chromosome
-        'dispersed' - on different chromosomes
-        'mixed' - combination
-    """
-    # Get chromosomes (if available)
-    chroms = set()
-    for match in matches:
-        # This would require chromosome info in the pairs file
-        # For now, just return 'unknown'
-        pass
-
-    return 'unknown'
 
 
 def main():
@@ -148,25 +183,23 @@ def main():
             'gene_id',
             'source',
             'n_matches',
-            'match_type',
+            'relationship',       # 1-to-many or many-to-1
+            'classification',     # Split, Merge, Duplication, etc.
             'matched_gene_ids',
             'matched_biotypes',
             'overlap_fractions',
-            'max_overlap_fraction',
+            'total_coverage_fraction',
             'has_rbh_match'
         ]) + '\n')
 
-        # Write Ensembl multi-mapping genes
-        for ens_id, matches in sorted(ensembl_multi.items()):
+        # Write Ensembl multi-mapping genes (1-to-many)
+        for ens_id, info in sorted(ensembl_multi.items()):
+            matches = info['matches']
             cat_ids = [m['cat_id'] for m in matches]
             cat_biotypes = [m.get('cat_biotype', '') for m in matches]
             fracs = [f"{m['frac_ensembl']:.3f}" for m in matches]
-            max_frac = max(m['frac_ensembl'] for m in matches)
-
-            # Check if any match is RBH
+            
             has_rbh = any(m.get('is_rbh', 'False') == 'True' for m in matches)
-
-            match_type = '1-to-many'
 
             out.write('\t'.join([
                 args.assembly_accession,
@@ -174,25 +207,26 @@ def main():
                 ens_id,
                 'ensembl',
                 str(len(matches)),
-                match_type,
+                '1-to-many',
+                info['classification'],
                 ';'.join(cat_ids),
                 ';'.join(cat_biotypes),
                 ';'.join(fracs),
-                f"{max_frac:.3f}",
+                f"{info['total_coverage']:.3f}",
                 str(has_rbh)
             ]) + '\n')
 
-        # Write CAT multi-mapping genes
-        for cat_id, matches in sorted(cat_multi.items()):
+        # Write CAT multi-mapping genes (many-to-1)
+        # Note: These are genes where 1 CAT gene overlaps MULTIPLE Ensembl genes
+        for cat_id, info in sorted(cat_multi.items()):
+            matches = info['matches']
             ens_ids = [m['ensembl_id'] for m in matches]
             ens_biotypes = [m.get('ensembl_biotype', '') for m in matches]
+            # specific fractions of interest depending on view
+            # For CAT View, we usually care how much of CAT is covered by Ensembls
             fracs = [f"{m['frac_cat']:.3f}" for m in matches]
-            max_frac = max(m['frac_cat'] for m in matches)
-
-            # Check if any match is RBH
+            
             has_rbh = any(m.get('is_rbh', 'False') == 'True' for m in matches)
-
-            match_type = 'many-to-1'
 
             out.write('\t'.join([
                 args.assembly_accession,
@@ -200,11 +234,12 @@ def main():
                 cat_id,
                 'cat',
                 str(len(matches)),
-                match_type,
+                'many-to-1',
+                info['classification'],
                 ';'.join(ens_ids),
                 ';'.join(ens_biotypes),
                 ';'.join(fracs),
-                f"{max_frac:.3f}",
+                f"{info['total_coverage']:.3f}",
                 str(has_rbh)
             ]) + '\n')
 

@@ -5,6 +5,7 @@ include { QC_METRICS }       from '../subworkflows/qc_metrics/main'
 workflow ENSEMBL_CAT_COMPARISON {
     take:
     assemblies_ch  // Channel of [assembly_accession, sample_name]
+    ensg_lookup    // Channel with path to ENSG lookup file
 
     main:
     // Fetch GFF files and assembly reports
@@ -37,7 +38,7 @@ workflow ENSEMBL_CAT_COMPARISON {
         }
 
     // Run QC metrics analyses
-    QC_METRICS(qc_input)
+    QC_METRICS(qc_input, ensg_lookup)
 
     emit:
     rbh = RUN_COMPARISON.out.rbh

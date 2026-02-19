@@ -1451,10 +1451,12 @@ def main():
         gene_df.to_csv(gene_out_all, sep='\t', index=False)
         logger.info(f"Written all gene pairs to {gene_out_all}")
         
-        # RBH Subset
-        rbh_df = gene_df[gene_df['is_rbh']]
+        # RBH Subset — spatial overlaps only (excludes name-only matches)
+        rbh_df = gene_df[gene_df['is_rbh'] & gene_df['is_spatial']]
         rbh_df.to_csv(gene_out_rbh, sep='\t', index=False)
-        logger.info(f"Written RBH pairs to {gene_out_rbh}")
+        logger.info(f"Written RBH pairs to {gene_out_rbh} "
+                    f"({len(rbh_df)} spatial; "
+                    f"{gene_df['is_rbh'].sum() - len(rbh_df)} name-only excluded)")
     else:
         logger.warning("No overlaps found to write.")
         # Write empty file with header

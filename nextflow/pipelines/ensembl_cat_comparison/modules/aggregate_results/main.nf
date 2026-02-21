@@ -1,23 +1,22 @@
 process AGGREGATE_GENE_PRESENCE {
-    label 'process_very_high'
+    label 'process_medium'
     conda 'conda-forge::python=3.11 conda-forge::pandas'
 
     publishDir "${params.outdir}/intermediate_spreadsheets", mode: 'copy'
 
     input:
-    path(gene_presence_files)
+    path(gene_presence_files, stageAs: 'gp_input/*')
 
     output:
     path("gene_presence/*.tsv"), emit: summaries
 
     script:
     """
-    mkdir -p gene_presence_input gene_presence
-    for f in ${gene_presence_files}; do
-        cp \$f gene_presence_input/
-    done
+    mkdir -p gene_presence
+    echo "DEBUG: Files in gp_input:" >&2
+    ls gp_input/ >&2
     aggregate_gene_presence.py \
-        --input-dir gene_presence_input \
+        --input-dir gp_input \
         --output-dir gene_presence
     """
 
@@ -33,33 +32,37 @@ process AGGREGATE_GENE_PRESENCE {
 
 
 process AGGREGATE_SANKEY {
-    label 'process_very_high'
+    label 'process_medium'
     conda 'conda-forge::python=3.11 conda-forge::pandas'
 
     publishDir "${params.outdir}/intermediate_spreadsheets", mode: 'copy'
 
     input:
-    path(gene_presence_files)
-    path(rbh_files)
-    path(transcript_concordance_files)
-    path(coding_integrity_files)
+    path(gene_presence_files, stageAs: 'gp_staged/*')
+    path(rbh_files, stageAs: 'rbh_staged/*')
+    path(transcript_concordance_files, stageAs: 'tc_staged/*')
+    path(coding_integrity_files, stageAs: 'ci_staged/*')
 
     output:
     path("sankey/*.tsv"), emit: summaries
 
     script:
     """
-    mkdir -p gp_dir rbh_dir tc_dir ci_dir sankey
-    for f in ${gene_presence_files}; do cp \$f gp_dir/; done
-    for f in ${rbh_files}; do cp \$f rbh_dir/; done
-    for f in ${transcript_concordance_files}; do cp \$f tc_dir/; done
-    for f in ${coding_integrity_files}; do cp \$f ci_dir/; done
+    mkdir -p sankey
+    echo "DEBUG: gene presence files in gp_staged:" >&2
+    ls gp_staged/ >&2 || echo "gp_staged dir empty/missing" >&2
+    echo "DEBUG: RBH files in rbh_staged:" >&2
+    ls rbh_staged/ >&2 || echo "rbh_staged dir empty/missing" >&2
+    echo "DEBUG: transcript concordance files in tc_staged:" >&2
+    ls tc_staged/ >&2 || echo "tc_staged dir empty/missing" >&2
+    echo "DEBUG: coding integrity files in ci_staged:" >&2
+    ls ci_staged/ >&2 || echo "ci_staged dir empty/missing" >&2
 
     aggregate_sankey_flows.py \
-        --gene-presence-dir gp_dir \
-        --rbh-dir rbh_dir \
-        --transcript-concordance-dir tc_dir \
-        --coding-integrity-dir ci_dir \
+        --gene-presence-dir gp_staged \
+        --rbh-dir rbh_staged \
+        --transcript-concordance-dir tc_staged \
+        --coding-integrity-dir ci_staged \
         --output-dir sankey
     """
 
@@ -73,21 +76,22 @@ process AGGREGATE_SANKEY {
 
 
 process AGGREGATE_CODING_INTEGRITY {
-    label 'process_very_high'
+    label 'process_medium'
     conda 'conda-forge::python=3.11 conda-forge::pandas'
 
     publishDir "${params.outdir}/intermediate_spreadsheets", mode: 'copy'
 
     input:
-    path(coding_integrity_files)
+    path(coding_integrity_files, stageAs: 'ci_input/*')
 
     output:
     path("coding_integrity/*.tsv"), emit: summaries
 
     script:
     """
-    mkdir -p ci_input coding_integrity
-    for f in ${coding_integrity_files}; do cp \$f ci_input/; done
+    mkdir -p coding_integrity
+    echo "DEBUG: Files in ci_input:" >&2
+    ls ci_input/ >&2
     aggregate_coding_integrity.py \
         --input-dir ci_input \
         --output-dir coding_integrity
@@ -104,21 +108,22 @@ process AGGREGATE_CODING_INTEGRITY {
 
 
 process AGGREGATE_TRANSCRIPT_COUNTS {
-    label 'process_very_high'
+    label 'process_medium'
     conda 'conda-forge::python=3.11 conda-forge::pandas'
 
     publishDir "${params.outdir}/intermediate_spreadsheets", mode: 'copy'
 
     input:
-    path(transcript_concordance_files)
+    path(transcript_concordance_files, stageAs: 'tc_input/*')
 
     output:
     path("transcript_counts/*.tsv"), emit: summaries
 
     script:
     """
-    mkdir -p tc_input transcript_counts
-    for f in ${transcript_concordance_files}; do cp \$f tc_input/; done
+    mkdir -p transcript_counts
+    echo "DEBUG: Files in tc_input:" >&2
+    ls tc_input/ >&2
     aggregate_transcript_counts.py \
         --input-dir tc_input \
         --output-dir transcript_counts
@@ -134,21 +139,22 @@ process AGGREGATE_TRANSCRIPT_COUNTS {
 
 
 process AGGREGATE_DIVERGENCE {
-    label 'process_very_high'
+    label 'process_medium'
     conda 'conda-forge::python=3.11 conda-forge::pandas'
 
     publishDir "${params.outdir}/intermediate_spreadsheets", mode: 'copy'
 
     input:
-    path(divergence_files)
+    path(divergence_files, stageAs: 'div_input/*')
 
     output:
     path("divergence/*.tsv"), emit: summaries
 
     script:
     """
-    mkdir -p div_input divergence
-    for f in ${divergence_files}; do cp \$f div_input/; done
+    mkdir -p divergence
+    echo "DEBUG: Files in div_input:" >&2
+    ls div_input/ >&2
     aggregate_grch38_divergence.py \
         --input-dir div_input \
         --output-dir divergence

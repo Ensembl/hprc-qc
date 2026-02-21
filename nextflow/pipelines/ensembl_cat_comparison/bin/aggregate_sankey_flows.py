@@ -8,6 +8,8 @@ Levels:
   3. Transcript concordance (full_match | partial | none) - subset of 'rbh_found'
   4. CDS integrity (intact | partial_disruption | disrupted) - subset of coding RBH
 
+Memory-efficient: indexes files first, then loads one assembly at a time.
+
 Produces:
   - sankey_flow_counts.tsv           - aggregate flow counts per level
   - sankey_per_assembly_flows.tsv    - per-assembly flow counts for distributions
@@ -23,8 +25,10 @@ Usage:
 """
 
 import argparse
+import csv
 import glob
 import os
+import re
 import sys
 
 import pandas as pd
@@ -42,24 +46,80 @@ def parse_args():
     return parser.parse_args()
 
 
-def load_tsvs(directory, pattern, label):
-    """Load all matching TSVs from a directory."""
-    files = sorted(glob.glob(os.path.join(directory, pattern)))
-    if not files:
-        print(f"WARNING: No {label} files found in {directory}", file=sys.stderr)
-        return {}
+# Regex for GCA/GCF accession with version: GCA_018466835.2
+ACCESSION_RE = re.compile(r'(GC[AF]_\d+\.\d+)')
 
-    dfs = {}
+
+def extract_accession_from_filename(filepath):
+    """Extract assembly accession from filename."""
+    basename = os.path.basename(filepath)
+    m = ACCESSION_RE.search(basename)
+    if m:
+        return m.group(1)
+    return None
+
+
+def extract_accession_from_header(filepath):
+    """Read just the first data row to get assembly_accession, without loading full file."""
+    try:
+        with open(filepath) as fh:
+            reader = csv.DictReader(fh, delimiter='\t')
+            row = next(reader, None)
+            if row and 'assembly_accession' in row:
+                return row['assembly_accession']
+    except Exception:
+        pass
+    return None
+
+
+def index_files(directory, patterns, label):
+    """Build accession -> filepath mapping without loading data.
+
+    Tries glob patterns in order; falls back to *.tsv.
+    Extracts accession from filename first, then from file header if needed.
+    """
+    files = []
+    for pattern in patterns:
+        files = sorted(glob.glob(os.path.join(directory, pattern)))
+        if files:
+            print(f"Found {len(files)} {label} files with pattern '{pattern}'", file=sys.stderr)
+            break
+
+    if not files:
+        files = sorted(glob.glob(os.path.join(directory, "*.tsv")))
+        if files:
+            print(f"WARNING: No {label} files with specific patterns, "
+                  f"using all {len(files)} TSV files in {directory}", file=sys.stderr)
+        else:
+            print(f"WARNING: No {label} TSV files found in {directory}", file=sys.stderr)
+            try:
+                contents = os.listdir(directory)
+                print(f"  Directory contents: {contents[:20]}", file=sys.stderr)
+            except Exception as e:
+                print(f"  Cannot list directory: {e}", file=sys.stderr)
+            return {}
+
+    index = {}
     for f in files:
-        try:
-            df = pd.read_csv(f, sep='\t')
-            if df.empty:
-                continue
-            accession = df['assembly_accession'].iloc[0] if 'assembly_accession' in df.columns else os.path.basename(f).split('_')[0]
-            dfs[accession] = df
-        except Exception as e:
-            print(f"WARNING: Could not read {f}: {e}", file=sys.stderr)
-    return dfs
+        accession = extract_accession_from_filename(f)
+        if not accession:
+            accession = extract_accession_from_header(f)
+        if accession:
+            index[accession] = f
+        else:
+            print(f"WARNING: Could not determine accession for {f}", file=sys.stderr)
+
+    print(f"Indexed {len(index)} {label} files: {sorted(list(index.keys()))[:5]}...", file=sys.stderr)
+    return index
+
+
+def load_tsv(filepath):
+    """Load a single TSV file with robust engine."""
+    try:
+        return pd.read_csv(filepath, sep='\t', engine='python')
+    except Exception as e:
+        print(f"WARNING: Could not read {filepath}: {e}", file=sys.stderr)
+        return None
 
 
 def main():
@@ -68,109 +128,148 @@ def main():
 
     threshold = args.rbh_coverage_threshold
 
-    # Load all per-assembly data
-    presence_dfs = load_tsvs(args.gene_presence_dir, "*_gene_presence.tsv", "gene presence")
-    rbh_dfs = load_tsvs(args.rbh_dir, "*.gene_pairs_rbh.tsv", "RBH")
-    tc_dfs = load_tsvs(args.transcript_concordance_dir, "*_transcript_concordance.tsv", "transcript concordance")
-    ci_dfs = load_tsvs(args.coding_integrity_dir, "*_coding_integrity.tsv", "coding integrity")
+    # Build file indexes (no data loaded yet)
+    presence_idx = index_files(args.gene_presence_dir,
+                               ["*_gene_presence.tsv", "*gene_presence*"],
+                               "gene presence")
+    rbh_idx = index_files(args.rbh_dir,
+                          ["*.gene_pairs_rbh.tsv", "*rbh*", "*gene_pairs*"],
+                          "RBH")
+    tc_idx = index_files(args.transcript_concordance_dir,
+                         ["*_transcript_concordance.tsv", "*transcript*"],
+                         "transcript concordance")
+    ci_idx = index_files(args.coding_integrity_dir,
+                         ["*_coding_integrity.tsv", "*coding_integrity*"],
+                         "coding integrity")
 
-    # Get common assemblies
-    all_accessions = set(presence_dfs.keys()) & set(rbh_dfs.keys())
+    # Assemblies that have at least gene presence + RBH
+    all_accessions = sorted(set(presence_idx.keys()) & set(rbh_idx.keys()))
+    print(f"Presence accessions: {sorted(list(presence_idx.keys()))[:5]}", file=sys.stderr)
+    print(f"RBH accessions: {sorted(list(rbh_idx.keys()))[:5]}", file=sys.stderr)
     print(f"Processing {len(all_accessions)} assemblies with both presence and RBH data", file=sys.stderr)
 
-    per_assembly_rows = []
+    # Stream results: write per-assembly rows as we go
+    out_path = os.path.join(args.output_dir, 'sankey_per_assembly_flows.tsv')
+    header_written = False
+    fieldnames = None
+    n_written = 0
 
-    for accession in sorted(all_accessions):
-        pres = presence_dfs[accession]
-        rbh = rbh_dfs[accession]
+    with open(out_path, 'w', newline='') as out_fh:
+        writer = None
 
-        # Level 1: Gene presence
-        n_both = ((pres['present_in_ensembl'] == 'True') & (pres['present_in_cat'] == 'True')).sum() if 'present_in_ensembl' in pres.columns else 0
-        # Handle string/bool
-        if n_both == 0 and 'present_in_ensembl' in pres.columns:
-            n_both = ((pres['present_in_ensembl'].astype(str) == 'True') & (pres['present_in_cat'].astype(str) == 'True')).sum()
-        n_ens_only = ((pres['present_in_ensembl'].astype(str) == 'True') & (pres['present_in_cat'].astype(str) == 'False')).sum()
-        n_cat_only = ((pres['present_in_ensembl'].astype(str) == 'False') & (pres['present_in_cat'].astype(str) == 'True')).sum()
-        n_total = n_both + n_ens_only + n_cat_only
+        for i, accession in enumerate(all_accessions):
+            if (i + 1) % 50 == 0:
+                print(f"  Processing assembly {i + 1}/{len(all_accessions)}: {accession}", file=sys.stderr)
 
-        # Level 2: RBH status
-        n_rbh_total = len(rbh)
-        if 'frac_ensembl_covered' in rbh.columns and 'frac_cat_covered' in rbh.columns:
-            rbh_pass = rbh[
-                (rbh['frac_ensembl_covered'].astype(float) >= threshold) &
-                (rbh['frac_cat_covered'].astype(float) >= threshold)
-            ]
-            n_rbh_pass = len(rbh_pass)
-        else:
-            n_rbh_pass = n_rbh_total
+            # Load only this assembly's files
+            pres = load_tsv(presence_idx[accession])
+            rbh = load_tsv(rbh_idx[accession])
 
-        n_rbh_fail = n_rbh_total - n_rbh_pass
+            if pres is None or pres.empty or rbh is None or rbh.empty:
+                continue
 
-        # Level 3: Transcript concordance (subset of RBH)
-        tc = tc_dfs.get(accession)
-        n_tx_full = 0
-        n_tx_partial = 0
-        n_tx_none = 0
-        if tc is not None and not tc.empty:
-            if 'transcript_concordance_rate' in tc.columns:
-                rates = tc['transcript_concordance_rate'].astype(float)
-                n_tx_full = (rates >= 1.0).sum()
-                n_tx_partial = ((rates > 0) & (rates < 1.0)).sum()
-                n_tx_none = (rates == 0).sum()
-            n_tx_total = n_tx_full + n_tx_partial + n_tx_none
-        else:
-            n_tx_total = 0
+            # Level 1: Gene presence
+            n_both = ((pres['present_in_ensembl'].astype(str) == 'True') &
+                      (pres['present_in_cat'].astype(str) == 'True')).sum()
+            n_ens_only = ((pres['present_in_ensembl'].astype(str) == 'True') &
+                          (pres['present_in_cat'].astype(str) == 'False')).sum()
+            n_cat_only = ((pres['present_in_ensembl'].astype(str) == 'False') &
+                          (pres['present_in_cat'].astype(str) == 'True')).sum()
+            n_total = n_both + n_ens_only + n_cat_only
 
-        # Level 4: CDS integrity (subset of coding RBH)
-        ci = ci_dfs.get(accession)
-        n_cds_intact = 0
-        n_cds_partial = 0
-        n_cds_disrupted = 0
-        n_cds_total = 0
-        if ci is not None and not ci.empty:
-            n_cds_total = len(ci)
-            if 'classification' in ci.columns:
-                n_cds_intact = (ci['classification'] == 'Full_Match').sum()
-                disrupted_classes = {'Internal_Frameshift', 'Complex_Mismatch', 'No_CDS'}
-                n_cds_disrupted = ci['classification'].isin(disrupted_classes).sum()
-                n_cds_partial = n_cds_total - n_cds_intact - n_cds_disrupted
+            # Level 2: RBH status
+            n_rbh_total = len(rbh)
+            if 'frac_ensembl_covered' in rbh.columns and 'frac_cat_covered' in rbh.columns:
+                n_rbh_pass = int(
+                    ((rbh['frac_ensembl_covered'].astype(float) >= threshold) &
+                     (rbh['frac_cat_covered'].astype(float) >= threshold)).sum()
+                )
+            else:
+                n_rbh_pass = n_rbh_total
+            n_rbh_fail = n_rbh_total - n_rbh_pass
 
-        sample = pres['sample_name'].iloc[0] if 'sample_name' in pres.columns else ''
-        per_assembly_rows.append({
-            'assembly_accession': accession,
-            'sample_name': sample,
-            # Level 1
-            'l1_total': int(n_total),
-            'l1_both': int(n_both),
-            'l1_ensembl_only': int(n_ens_only),
-            'l1_cat_only': int(n_cat_only),
-            'l1_pct_both': round(n_both / n_total * 100, 2) if n_total > 0 else 0,
-            # Level 2
-            'l2_rbh_total': int(n_rbh_total),
-            'l2_rbh_pass': int(n_rbh_pass),
-            'l2_rbh_fail': int(n_rbh_fail),
-            'l2_pct_pass': round(n_rbh_pass / n_rbh_total * 100, 2) if n_rbh_total > 0 else 0,
-            # Level 3
-            'l3_tx_total': int(n_tx_total),
-            'l3_tx_full': int(n_tx_full),
-            'l3_tx_partial': int(n_tx_partial),
-            'l3_tx_none': int(n_tx_none),
-            'l3_pct_full': round(n_tx_full / n_tx_total * 100, 2) if n_tx_total > 0 else 0,
-            # Level 4
-            'l4_cds_total': int(n_cds_total),
-            'l4_cds_intact': int(n_cds_intact),
-            'l4_cds_partial': int(n_cds_partial),
-            'l4_cds_disrupted': int(n_cds_disrupted),
-            'l4_pct_intact': round(n_cds_intact / n_cds_total * 100, 2) if n_cds_total > 0 else 0,
-        })
+            # Level 3: Transcript concordance (load only if available)
+            n_tx_full = n_tx_partial = n_tx_none = n_tx_total = 0
+            if accession in tc_idx:
+                tc = load_tsv(tc_idx[accession])
+                if tc is not None and not tc.empty and 'transcript_concordance_rate' in tc.columns:
+                    rates = tc['transcript_concordance_rate'].astype(float)
+                    n_tx_full = int((rates >= 1.0).sum())
+                    n_tx_partial = int(((rates > 0) & (rates < 1.0)).sum())
+                    n_tx_none = int((rates == 0).sum())
+                    n_tx_total = n_tx_full + n_tx_partial + n_tx_none
+                del tc  # free memory
 
-    per_asm_df = pd.DataFrame(per_assembly_rows)
-    per_asm_df.to_csv(
-        os.path.join(args.output_dir, 'sankey_per_assembly_flows.tsv'),
-        sep='\t', index=False
-    )
+            # Level 4: CDS integrity (load only if available)
+            n_cds_intact = n_cds_partial = n_cds_disrupted = n_cds_total = 0
+            if accession in ci_idx:
+                ci = load_tsv(ci_idx[accession])
+                if ci is not None and not ci.empty:
+                    n_cds_total = len(ci)
+                    if 'classification' in ci.columns:
+                        n_cds_intact = int((ci['classification'] == 'Full_Match').sum())
+                        disrupted_classes = {'Internal_Frameshift', 'Complex_Mismatch', 'No_CDS'}
+                        n_cds_disrupted = int(ci['classification'].isin(disrupted_classes).sum())
+                        n_cds_partial = n_cds_total - n_cds_intact - n_cds_disrupted
+                del ci  # free memory
 
-    # Aggregate across assemblies (medians and totals)
+            sample = pres['sample_name'].iloc[0] if 'sample_name' in pres.columns else ''
+
+            # Free the two large DataFrames
+            del pres, rbh
+
+            row = {
+                'assembly_accession': accession,
+                'sample_name': sample,
+                # Level 1
+                'l1_total': int(n_total),
+                'l1_both': int(n_both),
+                'l1_ensembl_only': int(n_ens_only),
+                'l1_cat_only': int(n_cat_only),
+                'l1_pct_both': round(n_both / n_total * 100, 2) if n_total > 0 else 0,
+                # Level 2
+                'l2_rbh_total': int(n_rbh_total),
+                'l2_rbh_pass': int(n_rbh_pass),
+                'l2_rbh_fail': int(n_rbh_fail),
+                'l2_pct_pass': round(n_rbh_pass / n_rbh_total * 100, 2) if n_rbh_total > 0 else 0,
+                # Level 3
+                'l3_tx_total': int(n_tx_total),
+                'l3_tx_full': int(n_tx_full),
+                'l3_tx_partial': int(n_tx_partial),
+                'l3_tx_none': int(n_tx_none),
+                'l3_pct_full': round(n_tx_full / n_tx_total * 100, 2) if n_tx_total > 0 else 0,
+                # Level 4
+                'l4_cds_total': int(n_cds_total),
+                'l4_cds_intact': int(n_cds_intact),
+                'l4_cds_partial': int(n_cds_partial),
+                'l4_cds_disrupted': int(n_cds_disrupted),
+                'l4_pct_intact': round(n_cds_intact / n_cds_total * 100, 2) if n_cds_total > 0 else 0,
+            }
+
+            # Write row
+            if not header_written:
+                fieldnames = list(row.keys())
+                writer = csv.DictWriter(out_fh, fieldnames=fieldnames, delimiter='\t')
+                writer.writeheader()
+                header_written = True
+            writer.writerow(row)
+            n_written += 1
+
+    # If nothing was written, create file with just a header
+    if not header_written:
+        print("WARNING: No assembly data found - writing empty output files", file=sys.stderr)
+        with open(out_path, 'w') as f:
+            f.write('\t'.join([
+                'assembly_accession', 'sample_name',
+                'l1_total', 'l1_both', 'l1_ensembl_only', 'l1_cat_only', 'l1_pct_both',
+                'l2_rbh_total', 'l2_rbh_pass', 'l2_rbh_fail', 'l2_pct_pass',
+                'l3_tx_total', 'l3_tx_full', 'l3_tx_partial', 'l3_tx_none', 'l3_pct_full',
+                'l4_cds_total', 'l4_cds_intact', 'l4_cds_partial', 'l4_cds_disrupted', 'l4_pct_intact',
+            ]) + '\n')
+
+    # Now read back the per-assembly file for aggregate summary
+    per_asm_df = pd.read_csv(out_path, sep='\t', engine='python')
+
     if not per_asm_df.empty:
         agg = {
             'n_assemblies': len(per_asm_df),
@@ -188,8 +287,13 @@ def main():
             os.path.join(args.output_dir, 'sankey_flow_counts.tsv'),
             sep='\t', index=False
         )
+    else:
+        pd.DataFrame(columns=['n_assemblies', 'rbh_coverage_threshold']).to_csv(
+            os.path.join(args.output_dir, 'sankey_flow_counts.tsv'),
+            sep='\t', index=False
+        )
 
-    print(f"Wrote Sankey flow data for {len(per_assembly_rows)} assemblies", file=sys.stderr)
+    print(f"Wrote Sankey flow data for {n_written} assemblies", file=sys.stderr)
 
 
 if __name__ == "__main__":

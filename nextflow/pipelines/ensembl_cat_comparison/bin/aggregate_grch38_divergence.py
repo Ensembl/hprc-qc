@@ -35,18 +35,28 @@ def main():
 
     tsv_files = sorted(glob.glob(os.path.join(args.input_dir, "*_grch38_divergence.tsv")))
     if not tsv_files:
-        print("ERROR: No grch38_divergence TSV files found", file=sys.stderr)
+        tsv_files = sorted(glob.glob(os.path.join(args.input_dir, "*.tsv")))
+    if not tsv_files:
+        print("ERROR: No grch38_divergence TSV files found in " + args.input_dir, file=sys.stderr)
+        try:
+            print(f"  Directory contents: {os.listdir(args.input_dir)[:20]}", file=sys.stderr)
+        except Exception:
+            pass
         sys.exit(1)
 
     print(f"Found {len(tsv_files)} divergence files", file=sys.stderr)
 
     assembly_rows = []
-    category_by_biotype = []
     all_category_counts = Counter()
+    # (biotype, divergence_category) -> total count across assemblies
+    biotype_category_counts = Counter()
 
-    for f in tsv_files:
+    for i, f in enumerate(tsv_files):
+        if (i + 1) % 50 == 0:
+            print(f"  Processing file {i + 1}/{len(tsv_files)}", file=sys.stderr)
+
         try:
-            df = pd.read_csv(f, sep='\t', dtype=str)
+            df = pd.read_csv(f, sep='\t', dtype=str, engine='python')
         except Exception as e:
             print(f"WARNING: Could not read {f}: {e}", file=sys.stderr)
             continue
@@ -81,15 +91,12 @@ def main():
             'pct_cat_specific': round(n_cat_spec / n_total * 100, 2) if n_total > 0 else 0,
         })
 
-        # Biotype stratification
+        # Biotype stratification — accumulate into Counter (memory-efficient)
         if 'ref_biotype' in df.columns:
             for (biotype, category), count in df.groupby(['ref_biotype', 'divergence_category']).size().items():
-                category_by_biotype.append({
-                    'assembly_accession': accession,
-                    'biotype': biotype,
-                    'divergence_category': category,
-                    'count': int(count),
-                })
+                biotype_category_counts[(biotype, category)] += int(count)
+
+        del df  # free memory
 
     # Write per-assembly summary
     pd.DataFrame(assembly_rows).to_csv(
@@ -114,12 +121,11 @@ def main():
         sep='\t', index=False
     )
 
-    # Write biotype breakdown
-    if category_by_biotype:
-        bio_df = pd.DataFrame(category_by_biotype)
-        # Aggregate across assemblies
-        bio_agg = bio_df.groupby(['biotype', 'divergence_category'])['count'].sum().reset_index()
-        bio_agg.to_csv(
+    # Write biotype breakdown (already aggregated across assemblies via Counter)
+    if biotype_category_counts:
+        bio_rows = [{'biotype': bt, 'divergence_category': cat, 'count': cnt}
+                    for (bt, cat), cnt in sorted(biotype_category_counts.items())]
+        pd.DataFrame(bio_rows).to_csv(
             os.path.join(args.output_dir, 'grch38_divergence_by_biotype.tsv'),
             sep='\t', index=False
         )

@@ -35,7 +35,14 @@ def main():
 
     tsv_files = sorted(glob.glob(os.path.join(args.input_dir, "*_gene_presence.tsv")))
     if not tsv_files:
-        print("ERROR: No gene_presence TSV files found", file=sys.stderr)
+        # Fallback: try all TSV files in the directory
+        tsv_files = sorted(glob.glob(os.path.join(args.input_dir, "*.tsv")))
+    if not tsv_files:
+        print("ERROR: No gene_presence TSV files found in " + args.input_dir, file=sys.stderr)
+        try:
+            print(f"  Directory contents: {os.listdir(args.input_dir)[:20]}", file=sys.stderr)
+        except Exception:
+            pass
         sys.exit(1)
 
     print(f"Found {len(tsv_files)} gene presence files", file=sys.stderr)
@@ -50,9 +57,12 @@ def main():
     gene_biotype_ensembl = {}            # gene_name -> biotype from ensembl
     gene_biotype_cat = {}                # gene_name -> biotype from cat
 
-    for f in tsv_files:
+    for i, f in enumerate(tsv_files):
+        if (i + 1) % 50 == 0:
+            print(f"  Processing file {i + 1}/{len(tsv_files)}", file=sys.stderr)
+
         try:
-            df = pd.read_csv(f, sep='\t', dtype=str)
+            df = pd.read_csv(f, sep='\t', dtype=str, engine='python')
         except Exception as e:
             print(f"WARNING: Could not read {f}: {e}", file=sys.stderr)
             continue
@@ -63,10 +73,13 @@ def main():
         accession = df['assembly_accession'].iloc[0]
         sample = df['sample_name'].iloc[0]
 
-        # Per-assembly counts
-        both = ((df['present_in_ensembl'] == 'True') & (df['present_in_cat'] == 'True')).sum()
-        ens_only = ((df['present_in_ensembl'] == 'True') & (df['present_in_cat'] == 'False')).sum()
-        cat_only = ((df['present_in_ensembl'] == 'False') & (df['present_in_cat'] == 'True')).sum()
+        # Vectorised presence masks
+        in_ens = df['present_in_ensembl'] == 'True'
+        in_cat = df['present_in_cat'] == 'True'
+
+        both = (in_ens & in_cat).sum()
+        ens_only = (in_ens & ~in_cat).sum()
+        cat_only = (~in_ens & in_cat).sum()
 
         assembly_summaries.append({
             'assembly_accession': accession,
@@ -78,24 +91,25 @@ def main():
             'pct_both': round(both / (both + ens_only + cat_only) * 100, 2) if (both + ens_only + cat_only) > 0 else 0,
         })
 
-        # Per-gene aggregation
-        for _, row in df.iterrows():
-            gn = row['gene_name']
-            in_ens = row['present_in_ensembl'] == 'True'
-            in_cat = row['present_in_cat'] == 'True'
+        # Per-gene aggregation — vectorised where possible
+        both_genes = df.loc[in_ens & in_cat, 'gene_name']
+        ens_only_genes = df.loc[in_ens & ~in_cat, 'gene_name']
+        cat_only_genes = df.loc[~in_ens & in_cat, 'gene_name']
 
-            if in_ens and in_cat:
-                gene_both_count[gn] += 1
-            elif in_ens:
-                gene_ensembl_only_count[gn] += 1
-            elif in_cat:
-                gene_cat_only_count[gn] += 1
+        for gn in both_genes:
+            gene_both_count[gn] += 1
+        for gn in ens_only_genes:
+            gene_ensembl_only_count[gn] += 1
+        for gn in cat_only_genes:
+            gene_cat_only_count[gn] += 1
 
-            # Store biotypes (first seen wins)
-            if in_ens and gn not in gene_biotype_ensembl:
-                gene_biotype_ensembl[gn] = row.get('ensembl_biotype', 'unknown')
-            if in_cat and gn not in gene_biotype_cat:
-                gene_biotype_cat[gn] = row.get('cat_biotype', 'unknown')
+        # Store biotypes (first seen wins) — vectorised
+        for _, row in df.loc[in_ens & ~df['gene_name'].isin(gene_biotype_ensembl)].iterrows():
+            gene_biotype_ensembl[row['gene_name']] = row.get('ensembl_biotype', 'unknown')
+        for _, row in df.loc[in_cat & ~df['gene_name'].isin(gene_biotype_cat)].iterrows():
+            gene_biotype_cat[row['gene_name']] = row.get('cat_biotype', 'unknown')
+
+        del df  # free memory
 
     n_assemblies = len(tsv_files)
 

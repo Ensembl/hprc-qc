@@ -1,6 +1,8 @@
 include { FETCH_FILES }      from '../subworkflows/fetch_files/main'
+include { FETCH_GENCODE_GTF } from '../modules/fetch_gencode_gtf/main'
 include { RUN_COMPARISON }   from '../modules/run_comparison/main'
 include { QC_METRICS }       from '../subworkflows/qc_metrics/main'
+include { AGGREGATE }        from '../subworkflows/aggregate/main'
 
 workflow ENSEMBL_CAT_COMPARISON {
     take:
@@ -8,6 +10,15 @@ workflow ENSEMBL_CAT_COMPARISON {
     ensg_lookup    // Channel with path to ENSG lookup file
 
     main:
+    // Fetch GENCODE GTF for GRCh38 divergence analysis
+    gencode_ch = Channel.value(params.gencode_version)
+    if (params.gencode_gtf) {
+        gencode_gtf_ch = Channel.fromPath(params.gencode_gtf, checkIfExists: true)
+    } else {
+        FETCH_GENCODE_GTF(gencode_ch)
+        gencode_gtf_ch = FETCH_GENCODE_GTF.out.gtf
+    }
+
     // Fetch GFF files and assembly reports
     FETCH_FILES(assemblies_ch)
 
@@ -17,10 +28,6 @@ workflow ENSEMBL_CAT_COMPARISON {
 
     // Prepare data for QC metrics
     // Combine GFF files with comparison results
-    // FETCH_FILES.out.paired: [accession, sample, ensembl_gff, cat_gff, assembly_report]
-    // RUN_COMPARISON.out.rbh: [accession, rbh.tsv]
-    // RUN_COMPARISON.out.all_pairs: [accession, all_pairs.tsv]
-
     qc_input = FETCH_FILES.out.paired
         .map { accession, sample, ensembl_gff, cat_gff, assembly_report ->
             tuple(accession, sample, ensembl_gff, cat_gff)
@@ -37,8 +44,38 @@ workflow ENSEMBL_CAT_COMPARISON {
             tuple(accession, sample, ensembl_gff, cat_gff, rbh_tsv, all_pairs_tsv)
         }
 
-    // Run QC metrics analyses
-    QC_METRICS(qc_input, ensg_lookup)
+    // Run QC metrics analyses (now includes GRCh38 divergence)
+    QC_METRICS(qc_input, ensg_lookup, gencode_gtf_ch)
+
+    // Aggregate all per-assembly results into intermediate spreadsheets
+    // Collect all per-assembly TSV files for aggregation
+    collected_gene_presence = QC_METRICS.out.gene_presence
+        .map { accession, sample, tsv -> tsv }
+        .collect()
+
+    collected_rbh = RUN_COMPARISON.out.rbh
+        .map { accession, tsv -> tsv }
+        .collect()
+
+    collected_transcript = QC_METRICS.out.transcript_concordance
+        .map { accession, sample, tsv -> tsv }
+        .collect()
+
+    collected_coding = QC_METRICS.out.coding_integrity
+        .map { accession, sample, tsv -> tsv }
+        .collect()
+
+    collected_divergence = QC_METRICS.out.grch38_divergence
+        .map { accession, sample, tsv -> tsv }
+        .collect()
+
+    AGGREGATE(
+        collected_gene_presence,
+        collected_rbh,
+        collected_transcript,
+        collected_coding,
+        collected_divergence
+    )
 
     emit:
     rbh = RUN_COMPARISON.out.rbh
@@ -48,4 +85,11 @@ workflow ENSEMBL_CAT_COMPARISON {
     coding_integrity = QC_METRICS.out.coding_integrity
     gene_presence = QC_METRICS.out.gene_presence
     multi_mapping = QC_METRICS.out.multi_mapping
+    grch38_divergence = QC_METRICS.out.grch38_divergence
+    // Aggregated intermediate spreadsheets
+    gene_presence_summaries = AGGREGATE.out.gene_presence_summaries
+    sankey_summaries = AGGREGATE.out.sankey_summaries
+    coding_integrity_summaries = AGGREGATE.out.coding_integrity_summaries
+    transcript_count_summaries = AGGREGATE.out.transcript_count_summaries
+    divergence_summaries = AGGREGATE.out.divergence_summaries
 }

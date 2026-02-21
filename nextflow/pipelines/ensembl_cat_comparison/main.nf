@@ -14,6 +14,7 @@ nextflow.enable.dsl = 2
     Required Parameters:
         --input             CSV file with columns: assembly_accession,sample_name
         --outdir            Output directory for results
+        --ensg_lookup       Path to transcript ID to ENSG ID lookup table
 
     Optional Parameters:
         --ensembl_cache_dir         Directory to cache Ensembl GFFs (default: ./cache/ensembl)
@@ -21,6 +22,10 @@ nextflow.enable.dsl = 2
         --assembly_reports_dir      Directory with assembly reports (optional)
         --comparison_script         Path to comparison Python script
         --max_assemblies            Limit number of assemblies to process (for testing)
+        --gencode_version           GENCODE version for GRCh38 reference (default: 47)
+        --gencode_gtf               Path to pre-downloaded GENCODE GTF (skips download)
+        --mapping_stats_genes       Path to CSV with Ensembl gene projection rates
+        --mapping_stats_transcripts Path to CSV with Ensembl transcript projection rates
 ========================================================================================
 */
 
@@ -34,6 +39,14 @@ params.assembly_reports_dir = './cache/assembly_reports'
 params.comparison_script = "${projectDir}/../../../packages/hprc-qc-annotation/src/hprc_qc_annotation/hprc_ensembl_cat_overlap.py"
 params.max_assemblies = null
 params.help = false
+
+// GENCODE reference for GRCh38 divergence analysis
+params.gencode_version = '47'
+params.gencode_gtf = null
+
+// Ensembl projection rate data (pre-computed)
+params.mapping_stats_genes = null
+params.mapping_stats_transcripts = null
 
 include { ENSEMBL_CAT_COMPARISON } from './workflows/ensembl_cat_comparison'
 
@@ -50,15 +63,22 @@ def helpMessage() {
     Required arguments:
         --input               CSV file with 'assembly_accession' and 'sample_name' columns
         --outdir              Output directory (default: ${params.outdir})
+        --ensg_lookup         Path to transcript ID to ENSG ID lookup table
 
     Optional arguments:
         --ensembl_cache_dir   Cache directory for Ensembl GFFs (default: ${params.ensembl_cache_dir})
         --cat_cache_dir       Cache directory for CAT GFFs (default: ${params.cat_cache_dir})
-
         --assembly_reports_dir  Directory containing assembly reports (optional)
-        --ensg_lookup         Path to transcript ID to ENSG ID lookup table (required)
         --comparison_script   Path to comparison script (default: auto-detected)
         --max_assemblies      Limit number of assemblies (for testing, e.g., --max_assemblies 3)
+
+    GENCODE/GRCh38 reference:
+        --gencode_version     GENCODE version number (default: 47)
+        --gencode_gtf         Path to pre-downloaded GENCODE GTF (skips download)
+
+    Projection rates (SUPP-A):
+        --mapping_stats_genes       CSV with per-assembly gene projection rates
+        --mapping_stats_transcripts CSV with per-assembly transcript projection rates
 
     Example CSV format:
         assembly_accession,sample_name
@@ -117,12 +137,23 @@ workflow {
         """
         ============================================
         Processing ${count} assemblies
+        Using GENCODE v${params.gencode_version} as GRCh38 reference
         ============================================
         """
     }
 
     // Create channel for lookup file
     ensg_lookup_ch = Channel.fromPath(params.ensg_lookup, checkIfExists: true)
+
+    // Copy mapping stats to output if provided
+    if (params.mapping_stats_genes) {
+        Channel.fromPath(params.mapping_stats_genes, checkIfExists: true)
+            .set { mapping_genes_ch }
+    }
+    if (params.mapping_stats_transcripts) {
+        Channel.fromPath(params.mapping_stats_transcripts, checkIfExists: true)
+            .set { mapping_transcripts_ch }
+    }
 
     // Run comparison workflow
     ENSEMBL_CAT_COMPARISON(assemblies_ch, ensg_lookup_ch)
@@ -133,6 +164,7 @@ workflow {
         ============================================
         Completed! RBH files created: ${results.size()}
         Results in: ${params.outdir}/results/
+        Intermediate spreadsheets in: ${params.outdir}/intermediate_spreadsheets/
         ============================================
         """
     }

@@ -14,6 +14,7 @@ Usage:
 """
 
 import argparse
+import gc
 import glob
 import os
 import sys
@@ -110,6 +111,7 @@ def main():
             gene_biotype_cat[row['gene_name']] = row.get('cat_biotype', 'unknown')
 
         del df  # free memory
+        gc.collect()
 
     n_assemblies = len(tsv_files)
 

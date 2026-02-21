@@ -14,6 +14,7 @@ Usage:
 """
 
 import argparse
+import gc
 import glob
 import os
 import sys
@@ -97,6 +98,7 @@ def main():
                 biotype_category_counts[(biotype, category)] += int(count)
 
         del df  # free memory
+        gc.collect()
 
     # Write per-assembly summary
     pd.DataFrame(assembly_rows).to_csv(

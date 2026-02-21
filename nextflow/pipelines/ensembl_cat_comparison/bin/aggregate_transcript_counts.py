@@ -21,6 +21,7 @@ Usage:
 
 import argparse
 import csv
+import gc
 import glob
 import os
 import random
@@ -89,6 +90,7 @@ def main():
             if 'n_ensembl_transcripts' not in df.columns or 'n_cat_transcripts' not in df.columns:
                 print(f"WARNING: {f} missing transcript count columns", file=sys.stderr)
                 del df
+                gc.collect()
                 continue
 
             ens_counts = df['n_ensembl_transcripts'].astype(int)
@@ -124,6 +126,7 @@ def main():
                 total_scatter_rows += 1
 
             del df  # free memory immediately
+            gc.collect()
 
     # Write per-assembly summary
     pd.DataFrame(assembly_summaries).to_csv(

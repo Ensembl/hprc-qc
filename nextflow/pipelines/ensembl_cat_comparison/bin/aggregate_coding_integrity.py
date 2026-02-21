@@ -13,6 +13,7 @@ Usage:
 """
 
 import argparse
+import gc
 import glob
 import os
 import sys
@@ -126,6 +127,7 @@ def main():
         })
 
         del df  # free memory
+        gc.collect()
 
     # Write per-assembly summary
     pd.DataFrame(assembly_rows).to_csv(

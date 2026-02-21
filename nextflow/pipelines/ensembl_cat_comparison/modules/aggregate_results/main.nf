@@ -1,5 +1,5 @@
 process AGGREGATE_GENE_PRESENCE {
-    label 'process_medium'
+    label 'process_very_high'
     conda 'conda-forge::python=3.11 conda-forge::pandas'
 
     publishDir "${params.outdir}/intermediate_spreadsheets", mode: 'copy'
@@ -32,7 +32,7 @@ process AGGREGATE_GENE_PRESENCE {
 
 
 process AGGREGATE_SANKEY {
-    label 'process_medium'
+    label 'process_very_high'
     conda 'conda-forge::python=3.11 conda-forge::pandas'
 
     publishDir "${params.outdir}/intermediate_spreadsheets", mode: 'copy'
@@ -76,7 +76,7 @@ process AGGREGATE_SANKEY {
 
 
 process AGGREGATE_CODING_INTEGRITY {
-    label 'process_medium'
+    label 'process_very_high'
     conda 'conda-forge::python=3.11 conda-forge::pandas'
 
     publishDir "${params.outdir}/intermediate_spreadsheets", mode: 'copy'
@@ -108,7 +108,7 @@ process AGGREGATE_CODING_INTEGRITY {
 
 
 process AGGREGATE_TRANSCRIPT_COUNTS {
-    label 'process_medium'
+    label 'process_very_high'
     conda 'conda-forge::python=3.11 conda-forge::pandas'
 
     publishDir "${params.outdir}/intermediate_spreadsheets", mode: 'copy'
@@ -139,7 +139,7 @@ process AGGREGATE_TRANSCRIPT_COUNTS {
 
 
 process AGGREGATE_DIVERGENCE {
-    label 'process_medium'
+    label 'process_very_high'
     conda 'conda-forge::python=3.11 conda-forge::pandas'
 
     publishDir "${params.outdir}/intermediate_spreadsheets", mode: 'copy'

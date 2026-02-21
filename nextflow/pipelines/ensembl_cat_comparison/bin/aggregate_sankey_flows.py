@@ -26,6 +26,7 @@ Usage:
 
 import argparse
 import csv
+import gc
 import glob
 import os
 import re
@@ -215,8 +216,9 @@ def main():
 
             sample = pres['sample_name'].iloc[0] if 'sample_name' in pres.columns else ''
 
-            # Free the two large DataFrames
+            # Free the large DataFrames and reclaim memory
             del pres, rbh
+            gc.collect()
 
             row = {
                 'assembly_accession': accession,

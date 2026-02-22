@@ -309,7 +309,7 @@ def load_rbh_pairs_with_names(rbh_path: str) -> list:
 
         ens_idx = col_idx.get('ensembl_id', col_idx.get('ensembl_gene_id'))
         cat_idx = col_idx.get('cat_id', col_idx.get('cat_gene_id'))
-        name_idx = col_idx.get('gene_name')
+        name_idx = col_idx.get('gene_name', col_idx.get('ensembl_name'))
         ens_bio_idx = col_idx.get('ensembl_biotype')
         cat_bio_idx = col_idx.get('cat_biotype')
 

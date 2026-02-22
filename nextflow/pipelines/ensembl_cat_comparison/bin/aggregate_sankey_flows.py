@@ -169,7 +169,7 @@ def main():
             if pres is None or pres.empty or rbh is None or rbh.empty:
                 continue
 
-            # Level 1: Gene presence
+            # Level 1: Gene presence (all genes, including ENSG-fallback names)
             n_both = ((pres['present_in_ensembl'].astype(str) == 'True') &
                       (pres['present_in_cat'].astype(str) == 'True')).sum()
             n_ens_only = ((pres['present_in_ensembl'].astype(str) == 'True') &
@@ -177,6 +177,19 @@ def main():
             n_cat_only = ((pres['present_in_ensembl'].astype(str) == 'False') &
                           (pres['present_in_cat'].astype(str) == 'True')).sum()
             n_total = n_both + n_ens_only + n_cat_only
+
+            # Level 1 (named only): exclude ENSG-fallback gene names
+            if 'gene_name' in pres.columns:
+                named = pres[~pres['gene_name'].astype(str).str.startswith('ENSG', na=False)]
+            else:
+                named = pres
+            n_named_both = ((named['present_in_ensembl'].astype(str) == 'True') &
+                            (named['present_in_cat'].astype(str) == 'True')).sum()
+            n_named_ens_only = ((named['present_in_ensembl'].astype(str) == 'True') &
+                                (named['present_in_cat'].astype(str) == 'False')).sum()
+            n_named_cat_only = ((named['present_in_ensembl'].astype(str) == 'False') &
+                                (named['present_in_cat'].astype(str) == 'True')).sum()
+            n_named_total = n_named_both + n_named_ens_only + n_named_cat_only
 
             # Level 2: RBH status
             n_rbh_total = len(rbh)
@@ -223,12 +236,18 @@ def main():
             row = {
                 'assembly_accession': accession,
                 'sample_name': sample,
-                # Level 1
+                # Level 1 (all genes, including ENSG-fallback)
                 'l1_total': int(n_total),
                 'l1_both': int(n_both),
                 'l1_ensembl_only': int(n_ens_only),
                 'l1_cat_only': int(n_cat_only),
                 'l1_pct_both': round(n_both / n_total * 100, 2) if n_total > 0 else 0,
+                # Level 1 named only (ENSG-fallback names excluded)
+                'l1_named_total': int(n_named_total),
+                'l1_named_both': int(n_named_both),
+                'l1_named_ensembl_only': int(n_named_ens_only),
+                'l1_named_cat_only': int(n_named_cat_only),
+                'l1_named_pct_both': round(n_named_both / n_named_total * 100, 2) if n_named_total > 0 else 0,
                 # Level 2
                 'l2_rbh_total': int(n_rbh_total),
                 'l2_rbh_pass': int(n_rbh_pass),
@@ -264,6 +283,7 @@ def main():
             f.write('\t'.join([
                 'assembly_accession', 'sample_name',
                 'l1_total', 'l1_both', 'l1_ensembl_only', 'l1_cat_only', 'l1_pct_both',
+                'l1_named_total', 'l1_named_both', 'l1_named_ensembl_only', 'l1_named_cat_only', 'l1_named_pct_both',
                 'l2_rbh_total', 'l2_rbh_pass', 'l2_rbh_fail', 'l2_pct_pass',
                 'l3_tx_total', 'l3_tx_full', 'l3_tx_partial', 'l3_tx_none', 'l3_pct_full',
                 'l4_cds_total', 'l4_cds_intact', 'l4_cds_partial', 'l4_cds_disrupted', 'l4_pct_intact',

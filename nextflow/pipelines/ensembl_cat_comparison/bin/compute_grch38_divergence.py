@@ -203,11 +203,18 @@ def load_gene_models_gff(gff_path: str) -> Dict[str, Dict]:
 
 
 def load_gencode_models(gtf_path: str) -> Dict[str, Dict]:
-    """Load reference gene models from GENCODE GTF keyed by gene_name."""
+    """Load reference gene models from GENCODE GTF keyed by gene_name.
+
+    GENCODE GTF CDS features include the stop codon in their coordinate range,
+    whereas Ensembl/CAT GFF3 CDS features exclude it.  To normalise to the
+    GFF3 convention (CDS = coding sequence without stop codon) we subtract
+    any annotated stop_codon intervals from the CDS length.
+    """
     gene_name_map = {}
     gene_to_tx = defaultdict(list)
     tx_to_exons = defaultdict(list)
     tx_to_cds = defaultdict(list)
+    tx_to_stop = defaultdict(list)   # stop_codon intervals to subtract
     gene_id_to_biotype = {}
 
     with open_maybe_gzip(gtf_path) as f:
@@ -245,6 +252,11 @@ def load_gencode_models(gtf_path: str) -> Dict[str, Dict]:
                 if tid:
                     tx_to_cds[tid].append((int(parts[3]), int(parts[4])))
 
+            elif ftype == 'stop_codon':
+                tid = attrs.get('transcript_id', '')
+                if tid:
+                    tx_to_stop[tid].append((int(parts[3]), int(parts[4])))
+
     models = {}
     for gname, gid in gene_name_map.items():
         txs = gene_to_tx.get(gid, [])
@@ -269,7 +281,8 @@ def load_gencode_models(gtf_path: str) -> Dict[str, Dict]:
         if best_tx:
             exons = sorted(tx_to_exons.get(best_tx, []))
             cds = tx_to_cds.get(best_tx, [])
-            cds_len = sum(e - s + 1 for s, e in cds)
+            stop_len = sum(e - s + 1 for s, e in tx_to_stop.get(best_tx, []))
+            cds_len = max(0, sum(e - s + 1 for s, e in cds) - stop_len)
 
             model = _exon_stats(exons)
             model['cds_length'] = cds_len
@@ -305,6 +318,7 @@ def compare_to_ref(projected: Optional[Dict], reference: Dict,
             'delta_mean_exon_length': None,
             'delta_cds_length': None,
             'cds_frameshift': None,
+            'cds_change_type': None,
             'structure_match': None,
             'length_match': None,
             'cds_match': None,
@@ -333,21 +347,27 @@ def compare_to_ref(projected: Optional[Dict], reference: Dict,
         cds_frameshift = (delta_cds != 0) and (abs(delta_cds) % 3 != 0)
         if delta_cds == 0:
             cds_direction = 'match'
+            cds_change_type = 'exact_match'
         elif cds_frameshift:
             cds_direction = 'frameshift'
+            cds_change_type = 'frameshift_shorter' if delta_cds < 0 else 'frameshift_longer'
         elif delta_cds > 0:
             cds_direction = 'longer'
+            cds_change_type = 'in_frame_longer'
         else:
             cds_direction = 'shorter'
+            cds_change_type = 'in_frame_shorter'
     elif not reference['is_coding'] and not projected['is_coding']:
         cds_match = True
         cds_frameshift = False
         cds_direction = 'non_coding'
+        cds_change_type = 'non_coding'
     else:
         # Coding status changed
         cds_match = False
         cds_frameshift = False
         cds_direction = 'coding_status_change'
+        cds_change_type = 'coding_lost' if reference['is_coding'] else 'coding_gained'
 
     if delta_tx_len == 0:
         length_direction = 'same'
@@ -369,6 +389,7 @@ def compare_to_ref(projected: Optional[Dict], reference: Dict,
         'delta_mean_exon_length': delta_mean_exon,
         'delta_cds_length': delta_cds,
         'cds_frameshift': cds_frameshift,
+        'cds_change_type': cds_change_type,
         'structure_match': structure_match,
         'length_match': length_match,
         'cds_match': cds_match,
@@ -420,7 +441,7 @@ METRIC_COLS = [
 
 DELTA_COLS = [
     'delta_n_exons', 'delta_transcript_length', 'delta_mean_exon_length',
-    'delta_cds_length', 'cds_frameshift',
+    'delta_cds_length', 'cds_frameshift', 'cds_change_type',
     'structure_match', 'length_match', 'cds_match', 'coding_status_match',
     'length_direction', 'cds_direction', 'diverged',
 ]

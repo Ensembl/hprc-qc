@@ -132,6 +132,9 @@ def main():
     # biotype -> delta_col -> [values across all assemblies]
     biotype_delta_vals = defaultdict(lambda: defaultdict(list))
 
+    # biotype -> source ('ensembl'|'cat') -> cds_change_type -> count
+    biotype_cds_change_counts = defaultdict(lambda: defaultdict(Counter))
+
     # (assembly_accession, sample_name, biotype) -> delta_col -> [values]
     asm_biotype_delta_vals = defaultdict(lambda: defaultdict(list))
 
@@ -220,6 +223,13 @@ def main():
                         vals = grp[col].dropna().tolist()
                         biotype_delta_vals[biotype][col].extend(vals)
                         asm_biotype_delta_vals[(accession, sample, biotype)][col].extend(vals)
+
+                # CDS change type tracking
+                for src, col in [('ensembl', 'ens_cds_change_type'), ('cat', 'cat_cds_change_type')]:
+                    if col in grp.columns:
+                        for chg_type, cnt in grp[col].value_counts().items():
+                            if pd.notna(chg_type):
+                                biotype_cds_change_counts[biotype][src][str(chg_type)] += int(cnt)
 
         del df
         gc.collect()
@@ -323,6 +333,26 @@ def main():
                      'mean', 'median', 'sd', 'p5', 'p25', 'p75', 'p95']
         pd.DataFrame(dist_rows)[dist_cols].to_csv(
             os.path.join(args.output_dir, 'grch38_divergence_delta_distributions.tsv'),
+            sep='\t', index=False,
+        )
+
+    # -----------------------------------------------------------------------
+    # Write CDS change type breakdown by biotype (for protein-coding analysis)
+    # -----------------------------------------------------------------------
+    cds_change_rows = []
+    for biotype in sorted(biotype_cds_change_counts):
+        for source in ['ensembl', 'cat']:
+            for cds_type, cnt in sorted(biotype_cds_change_counts[biotype][source].items()):
+                cds_change_rows.append({
+                    'biotype': biotype,
+                    'source': source,
+                    'cds_change_type': cds_type,
+                    'count': cnt,
+                })
+
+    if cds_change_rows:
+        pd.DataFrame(cds_change_rows).to_csv(
+            os.path.join(args.output_dir, 'grch38_cds_change_type_by_biotype.tsv'),
             sep='\t', index=False,
         )
 

@@ -3,31 +3,43 @@
 Compare Ensembl and CAT projected annotations against GRCh38 GENCODE reference
 to identify concordant and discordant divergences (MAIN-2).
 
-For each RBH gene pair, classifies:
-  1. Both methods agree - same as reference
-  2. Both methods agree - diverged from reference (high-confidence genuine variation)
-  3. Ensembl diverged, CAT agrees with reference (Ensembl-specific)
-  4. CAT diverged, Ensembl agrees with reference (CAT-specific)
+For each RBH gene pair, computes valid cross-assembly metrics (lengths and counts —
+never raw coordinates, which are incomparable across assembly spaces) and classifies
+divergence relative to the GRCh38 reference.
 
-Divergence is assessed on transcript structure (exon count) and CDS properties
-(start codon position, stop codon position, CDS length).
+Metrics computed per annotation source (ref/ens/cat):
+  - Exon count, transcript length, exon length stats (mean/median/min/max)
+  - Intron count and intron length stats
+  - CDS length (coding genes only)
+
+Divergence classification per source vs reference:
+  - structure_match: exon count within tolerance
+  - length_match: transcript length within tolerance
+  - cds_match: CDS length within tolerance (coding only)
+  - coding_status_match: both coding or both non-coding
+  - cds_frameshift: CDS length delta not divisible by 3
+
+Summary divergence_category (4-way, consistent with prior analysis):
+  both_agree_reference | both_agree_diverged |
+  ensembl_specific_divergence | cat_specific_divergence
 
 Usage:
-    compute_grch38_divergence.py \
-        --ensembl-gff <path> \
-        --cat-gff <path> \
-        --rbh-pairs <path> \
-        --gencode-gtf <path> \
-        --assembly-accession <accession> \
-        --sample-name <sample> \
+    compute_grch38_divergence.py \\
+        --ensembl-gff <path> \\
+        --cat-gff <path> \\
+        --rbh-pairs <path> \\
+        --gencode-gtf <path> \\
+        --assembly-accession <accession> \\
+        --sample-name <sample> \\
         --output <path>
 """
 
 import argparse
 import gzip
+import statistics
 import sys
 from collections import defaultdict
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Optional, Tuple
 
 
 def parse_args():
@@ -41,8 +53,10 @@ def parse_args():
     parser.add_argument("--sample-name", required=True)
     parser.add_argument("--exon-count-tolerance", type=int, default=0,
                         help="Allowed exon count difference (default: 0)")
-    parser.add_argument("--cds-boundary-tolerance", type=int, default=9,
-                        help="Allowed CDS boundary shift in bp (default: 9, codon-preserving)")
+    parser.add_argument("--length-tolerance", type=int, default=0,
+                        help="Allowed transcript length difference in bp (default: 0)")
+    parser.add_argument("--cds-length-tolerance", type=int, default=0,
+                        help="Allowed CDS length difference in bp (default: 0)")
     return parser.parse_args()
 
 
@@ -79,8 +93,50 @@ TRANSCRIPT_TYPES = {
 }
 
 
+def _exon_stats(exon_list: List[Tuple[int, int]]) -> Dict:
+    """Compute length stats from a sorted list of (start, end) exon tuples (1-based inclusive)."""
+    if not exon_list:
+        return {
+            'n_exons': 0,
+            'transcript_length': 0,
+            'mean_exon_length': 0.0,
+            'median_exon_length': 0.0,
+            'min_exon_length': 0,
+            'max_exon_length': 0,
+            'n_introns': 0,
+            'mean_intron_length': None,
+            'median_intron_length': None,
+            'min_intron_length': None,
+            'max_intron_length': None,
+        }
+
+    lengths = [e - s + 1 for s, e in exon_list]
+    transcript_length = sum(lengths)
+    n_exons = len(lengths)
+
+    intron_lengths = []
+    for i in range(len(exon_list) - 1):
+        intron_len = exon_list[i + 1][0] - exon_list[i][1] - 1
+        if intron_len >= 0:
+            intron_lengths.append(intron_len)
+
+    return {
+        'n_exons': n_exons,
+        'transcript_length': transcript_length,
+        'mean_exon_length': statistics.mean(lengths),
+        'median_exon_length': statistics.median(lengths),
+        'min_exon_length': min(lengths),
+        'max_exon_length': max(lengths),
+        'n_introns': len(intron_lengths),
+        'mean_intron_length': statistics.mean(intron_lengths) if intron_lengths else None,
+        'median_intron_length': statistics.median(intron_lengths) if intron_lengths else None,
+        'min_intron_length': min(intron_lengths) if intron_lengths else None,
+        'max_intron_length': max(intron_lengths) if intron_lengths else None,
+    }
+
+
 def load_gene_models_gff(gff_path: str) -> Dict[str, Dict]:
-    """Load gene models from GFF3: gene_id -> {n_transcripts, n_exons_per_tx, cds_length, ...}"""
+    """Load gene models from GFF3. Returns gene_id -> model dict with length/count metrics."""
     gene_to_tx = defaultdict(list)
     tx_to_exons = defaultdict(list)
     tx_to_cds = defaultdict(list)
@@ -112,60 +168,47 @@ def load_gene_models_gff(gff_path: str) -> Dict[str, Dict]:
             elif ftype == 'CDS':
                 parent = attrs.get('Parent', attrs.get('transcript_id'))
                 if parent:
-                    tx_to_cds[parent].append((int(parts[3]), int(parts[4]), parts[6]))
+                    tx_to_cds[parent].append((int(parts[3]), int(parts[4])))
 
-    # Build gene models
     models = {}
     for gene_id, txs in gene_to_tx.items():
-        # Use longest transcript as representative
         best_tx = None
-        best_exon_count = 0
         best_cds_len = 0
+        best_exon_count = 0
 
         for tx in txs:
-            exons = sorted(tx_to_exons.get(tx, []))
-            cds = sorted(tx_to_cds.get(tx, []))
-            cds_len = sum(e - s + 1 for s, e, _ in cds)
+            exons = tx_to_exons.get(tx, [])
+            cds = tx_to_cds.get(tx, [])
+            cds_len = sum(e - s + 1 for s, e in cds)
 
             if cds_len > best_cds_len or (cds_len == best_cds_len and len(exons) > best_exon_count):
                 best_tx = tx
-                best_exon_count = len(exons)
                 best_cds_len = cds_len
+                best_exon_count = len(exons)
+
+        if best_tx is None and txs:
+            best_tx = txs[0]
 
         if best_tx:
             exons = sorted(tx_to_exons.get(best_tx, []))
-            cds = sorted(tx_to_cds.get(best_tx, []))
-            strand = cds[0][2] if cds else '+'
+            cds = tx_to_cds.get(best_tx, [])
+            cds_len = sum(e - s + 1 for s, e in cds)
 
-            cds_start = None
-            cds_stop = None
-            if cds:
-                if strand == '+':
-                    cds_start = cds[0][0]
-                    cds_stop = cds[-1][1]
-                else:
-                    cds_start = cds[-1][1]
-                    cds_stop = cds[0][0]
-
-            models[gene_id] = {
-                'n_transcripts': len(txs),
-                'n_exons': len(exons),
-                'cds_length': best_cds_len,
-                'cds_start': cds_start,
-                'cds_stop': cds_stop,
-                'transcript_id': best_tx,
-                'is_coding': best_cds_len > 0,
-            }
+            model = _exon_stats(exons)
+            model['cds_length'] = cds_len
+            model['is_coding'] = cds_len > 0
+            models[gene_id] = model
 
     return models
 
 
 def load_gencode_models(gtf_path: str) -> Dict[str, Dict]:
-    """Load reference gene models from GENCODE GTF by gene_name."""
-    gene_name_map = {}  # gene_name -> gene_id
+    """Load reference gene models from GENCODE GTF keyed by gene_name."""
+    gene_name_map = {}
     gene_to_tx = defaultdict(list)
     tx_to_exons = defaultdict(list)
     tx_to_cds = defaultdict(list)
+    gene_id_to_biotype = {}
 
     with open_maybe_gzip(gtf_path) as f:
         for line in f:
@@ -183,10 +226,8 @@ def load_gencode_models(gtf_path: str) -> Dict[str, Dict]:
                 gid = attrs.get('gene_id', '')
                 biotype = attrs.get('gene_type', '')
                 if gname:
-                    gene_name_map[gname] = {
-                        'gene_id': gid,
-                        'biotype': biotype,
-                    }
+                    gene_name_map[gname] = gid
+                    gene_id_to_biotype[gid] = biotype
 
             elif ftype == 'transcript':
                 tid = attrs.get('transcript_id', '')
@@ -202,106 +243,143 @@ def load_gencode_models(gtf_path: str) -> Dict[str, Dict]:
             elif ftype == 'CDS':
                 tid = attrs.get('transcript_id', '')
                 if tid:
-                    tx_to_cds[tid].append((int(parts[3]), int(parts[4]), parts[6]))
+                    tx_to_cds[tid].append((int(parts[3]), int(parts[4])))
 
-    # Build models keyed by gene_name
     models = {}
-    for gname, ginfo in gene_name_map.items():
-        gid = ginfo['gene_id']
+    for gname, gid in gene_name_map.items():
         txs = gene_to_tx.get(gid, [])
 
         best_tx = None
-        best_exon_count = 0
         best_cds_len = 0
+        best_exon_count = 0
 
         for tx in txs:
-            exons = sorted(tx_to_exons.get(tx, []))
-            cds = sorted(tx_to_cds.get(tx, []))
-            cds_len = sum(e - s + 1 for s, e, _ in cds)
+            exons = tx_to_exons.get(tx, [])
+            cds = tx_to_cds.get(tx, [])
+            cds_len = sum(e - s + 1 for s, e in cds)
 
             if cds_len > best_cds_len or (cds_len == best_cds_len and len(exons) > best_exon_count):
                 best_tx = tx
-                best_exon_count = len(exons)
                 best_cds_len = cds_len
+                best_exon_count = len(exons)
+
+        if best_tx is None and txs:
+            best_tx = txs[0]
 
         if best_tx:
             exons = sorted(tx_to_exons.get(best_tx, []))
-            cds = sorted(tx_to_cds.get(best_tx, []))
-            strand = cds[0][2] if cds else '+'
+            cds = tx_to_cds.get(best_tx, [])
+            cds_len = sum(e - s + 1 for s, e in cds)
 
-            cds_start = None
-            cds_stop = None
-            if cds:
-                if strand == '+':
-                    cds_start = cds[0][0]
-                    cds_stop = cds[-1][1]
-                else:
-                    cds_start = cds[-1][1]
-                    cds_stop = cds[0][0]
-
-            models[gname] = {
-                'n_transcripts': len(txs),
-                'n_exons': best_exon_count,
-                'cds_length': best_cds_len,
-                'cds_start': cds_start,
-                'cds_stop': cds_stop,
-                'biotype': ginfo['biotype'],
-                'is_coding': best_cds_len > 0,
-            }
+            model = _exon_stats(exons)
+            model['cds_length'] = cds_len
+            model['is_coding'] = cds_len > 0
+            model['biotype'] = gene_id_to_biotype.get(gid, '')
+            models[gname] = model
 
     return models
 
 
-def classify_divergence(projected: Dict, reference: Dict,
-                        exon_tol: int, cds_tol: int) -> Tuple[bool, bool, str]:
+def _fmt(val) -> str:
+    """Format a value for TSV output: None -> '', float -> 2 decimal places."""
+    if val is None:
+        return ''
+    if isinstance(val, float):
+        return f'{val:.4f}'
+    return str(val)
+
+
+def compare_to_ref(projected: Optional[Dict], reference: Dict,
+                   exon_tol: int, len_tol: int, cds_tol: int) -> Dict:
     """
-    Compare a projected gene model against the GRCh38 reference.
+    Compare a projected gene model against the GRCh38 reference using valid
+    cross-assembly metrics (counts and lengths only — no coordinate comparison).
 
-    Returns:
-        (structure_diverged, cds_diverged, detail_string)
+    Returns a dict of signed deltas, match flags, direction labels, and an overall
+    diverged flag.
     """
-    if not projected or not reference:
-        return False, False, 'missing_data'
+    if projected is None:
+        return {
+            'delta_n_exons': None,
+            'delta_transcript_length': None,
+            'delta_mean_exon_length': None,
+            'delta_cds_length': None,
+            'cds_frameshift': None,
+            'structure_match': None,
+            'length_match': None,
+            'cds_match': None,
+            'coding_status_match': None,
+            'length_direction': 'missing',
+            'cds_direction': 'missing',
+            'diverged': None,
+        }
 
-    # Transcript structure divergence: exon count difference
-    exon_diff = abs(projected['n_exons'] - reference['n_exons'])
-    structure_diverged = exon_diff > exon_tol
+    delta_n_exons = projected['n_exons'] - reference['n_exons']
+    delta_tx_len = projected['transcript_length'] - reference['transcript_length']
+    delta_mean_exon = (
+        (projected['mean_exon_length'] - reference['mean_exon_length'])
+        if reference['n_exons'] > 0 and projected['n_exons'] > 0
+        else None
+    )
+    delta_cds = projected['cds_length'] - reference['cds_length']
 
-    # CDS divergence
-    cds_diverged = False
-    cds_detail = 'non_coding'
+    structure_match = abs(delta_n_exons) <= exon_tol
+    length_match = abs(delta_tx_len) <= len_tol
+    coding_status_match = projected['is_coding'] == reference['is_coding']
 
-    if projected['is_coding'] and reference['is_coding']:
-        len_diff = abs(projected['cds_length'] - reference['cds_length'])
+    # CDS match only meaningful if both are coding
+    if reference['is_coding'] and projected['is_coding']:
+        cds_match = abs(delta_cds) <= cds_tol
+        cds_frameshift = (delta_cds != 0) and (abs(delta_cds) % 3 != 0)
+        if delta_cds == 0:
+            cds_direction = 'match'
+        elif cds_frameshift:
+            cds_direction = 'frameshift'
+        elif delta_cds > 0:
+            cds_direction = 'longer'
+        else:
+            cds_direction = 'shorter'
+    elif not reference['is_coding'] and not projected['is_coding']:
+        cds_match = True
+        cds_frameshift = False
+        cds_direction = 'non_coding'
+    else:
+        # Coding status changed
+        cds_match = False
+        cds_frameshift = False
+        cds_direction = 'coding_status_change'
 
-        # CDS boundary shift
-        boundary_diverged = False
-        if projected['cds_start'] is not None and reference['cds_start'] is not None:
-            if abs(projected['cds_start'] - reference['cds_start']) > cds_tol:
-                boundary_diverged = True
-        if projected['cds_stop'] is not None and reference['cds_stop'] is not None:
-            if abs(projected['cds_stop'] - reference['cds_stop']) > cds_tol:
-                boundary_diverged = True
+    if delta_tx_len == 0:
+        length_direction = 'same'
+    elif delta_tx_len > 0:
+        length_direction = 'longer'
+    else:
+        length_direction = 'shorter'
 
-        cds_diverged = boundary_diverged or len_diff > cds_tol
-        cds_detail = 'cds_match' if not cds_diverged else 'cds_diverged'
-    elif projected['is_coding'] != reference['is_coding']:
-        cds_diverged = True
-        cds_detail = 'coding_status_change'
+    diverged = (
+        not structure_match
+        or not length_match
+        or not cds_match
+        or not coding_status_match
+    )
 
-    detail = []
-    if structure_diverged:
-        detail.append(f'exon_diff={exon_diff}')
-    if cds_diverged:
-        detail.append(cds_detail)
-    if not detail:
-        detail.append('identical')
+    return {
+        'delta_n_exons': delta_n_exons,
+        'delta_transcript_length': delta_tx_len,
+        'delta_mean_exon_length': delta_mean_exon,
+        'delta_cds_length': delta_cds,
+        'cds_frameshift': cds_frameshift,
+        'structure_match': structure_match,
+        'length_match': length_match,
+        'cds_match': cds_match,
+        'coding_status_match': coding_status_match,
+        'length_direction': length_direction,
+        'cds_direction': cds_direction,
+        'diverged': diverged,
+    }
 
-    return structure_diverged, cds_diverged, ';'.join(detail)
 
-
-def load_rbh_pairs_with_names(rbh_path: str) -> list:
-    """Load RBH pairs and extract gene names if available."""
+def load_rbh_pairs(rbh_path: str) -> list:
     pairs = []
     with open(rbh_path, 'r') as f:
         header = f.readline().strip().split('\t')
@@ -331,6 +409,48 @@ def load_rbh_pairs_with_names(rbh_path: str) -> list:
     return pairs
 
 
+# Column definitions for the output TSV
+METRIC_COLS = [
+    'n_exons', 'transcript_length',
+    'mean_exon_length', 'median_exon_length', 'min_exon_length', 'max_exon_length',
+    'n_introns', 'mean_intron_length', 'median_intron_length',
+    'min_intron_length', 'max_intron_length',
+    'cds_length',
+]
+
+DELTA_COLS = [
+    'delta_n_exons', 'delta_transcript_length', 'delta_mean_exon_length',
+    'delta_cds_length', 'cds_frameshift',
+    'structure_match', 'length_match', 'cds_match', 'coding_status_match',
+    'length_direction', 'cds_direction', 'diverged',
+]
+
+HEADER = (
+    ['assembly_accession', 'sample_name',
+     'ensembl_gene_id', 'cat_gene_id', 'gene_name',
+     'ensembl_biotype', 'ref_biotype', 'is_coding']
+    + [f'ref_{c}' for c in METRIC_COLS]
+    + [f'ens_{c}' for c in METRIC_COLS]
+    + [f'cat_{c}' for c in METRIC_COLS]
+    + [f'ens_{c}' for c in DELTA_COLS]
+    + [f'cat_{c}' for c in DELTA_COLS]
+    + ['ens_cat_delta_n_exons', 'ens_cat_delta_transcript_length', 'ens_cat_delta_cds_length']
+    + ['divergence_category']
+)
+
+
+def model_metric_values(model: Optional[Dict]) -> List[str]:
+    """Return formatted metric values for one annotation source."""
+    if model is None:
+        return [''] * len(METRIC_COLS)
+    return [_fmt(model.get(c)) for c in METRIC_COLS]
+
+
+def delta_values(d: Dict) -> List[str]:
+    """Return formatted delta/flag values for one comparison."""
+    return [_fmt(d.get(c)) for c in DELTA_COLS]
+
+
 def main():
     args = parse_args()
 
@@ -340,88 +460,85 @@ def main():
 
     print(f"Loading Ensembl projections from {args.ensembl_gff}", file=sys.stderr)
     ens_models = load_gene_models_gff(args.ensembl_gff)
+    print(f"Loaded {len(ens_models)} Ensembl gene models", file=sys.stderr)
 
     print(f"Loading CAT projections from {args.cat_gff}", file=sys.stderr)
     cat_models = load_gene_models_gff(args.cat_gff)
+    print(f"Loaded {len(cat_models)} CAT gene models", file=sys.stderr)
 
     print(f"Loading RBH pairs from {args.rbh_pairs}", file=sys.stderr)
-    rbh_pairs = load_rbh_pairs_with_names(args.rbh_pairs)
+    rbh_pairs = load_rbh_pairs(args.rbh_pairs)
 
     exon_tol = args.exon_count_tolerance
-    cds_tol = args.cds_boundary_tolerance
+    len_tol = args.length_tolerance
+    cds_tol = args.cds_length_tolerance
+
+    n_written = 0
+    n_no_ref = 0
 
     with open(args.output, 'w') as out:
-        out.write('\t'.join([
-            'assembly_accession', 'sample_name',
-            'ensembl_gene_id', 'cat_gene_id', 'gene_name',
-            'ensembl_biotype', 'ref_biotype',
-            'ens_structure_diverged', 'ens_cds_diverged', 'ens_detail',
-            'cat_structure_diverged', 'cat_cds_diverged', 'cat_detail',
-            'divergence_category',
-            'ref_n_exons', 'ens_n_exons', 'cat_n_exons',
-            'ref_cds_length', 'ens_cds_length', 'cat_cds_length',
-        ]) + '\n')
-
-        n_written = 0
-        n_no_ref = 0
+        out.write('\t'.join(HEADER) + '\n')
 
         for pair in rbh_pairs:
             ens_id = pair['ensembl_id']
             cat_id = pair['cat_id']
             gene_name = pair['gene_name']
 
-            ens_model = ens_models.get(ens_id)
-            cat_model = cat_models.get(cat_id)
-
-            # Look up reference by gene name
             ref_model = ref_models.get(gene_name) if gene_name else None
-
             if ref_model is None:
                 n_no_ref += 1
                 continue
 
-            # Classify Ensembl vs reference
-            ens_struct_div, ens_cds_div, ens_detail = classify_divergence(
-                ens_model, ref_model, exon_tol, cds_tol
-            )
+            ens_model = ens_models.get(ens_id)
+            cat_model = cat_models.get(cat_id)
 
-            # Classify CAT vs reference
-            cat_struct_div, cat_cds_div, cat_detail = classify_divergence(
-                cat_model, ref_model, exon_tol, cds_tol
-            )
+            ens_cmp = compare_to_ref(ens_model, ref_model, exon_tol, len_tol, cds_tol)
+            cat_cmp = compare_to_ref(cat_model, ref_model, exon_tol, len_tol, cds_tol)
 
-            # Cross-tabulate into 4 categories
-            ens_diverged = ens_struct_div or ens_cds_div
-            cat_diverged = cat_struct_div or cat_cds_div
+            # 4-way divergence category
+            ens_div = ens_cmp['diverged']
+            cat_div = cat_cmp['diverged']
 
-            if not ens_diverged and not cat_diverged:
+            if ens_div is None or cat_div is None:
+                category = 'insufficient_data'
+            elif not ens_div and not cat_div:
                 category = 'both_agree_reference'
-            elif ens_diverged and cat_diverged:
+            elif ens_div and cat_div:
                 category = 'both_agree_diverged'
-            elif ens_diverged and not cat_diverged:
+            elif ens_div:
                 category = 'ensembl_specific_divergence'
             else:
                 category = 'cat_specific_divergence'
 
-            out.write('\t'.join([
-                args.assembly_accession, args.sample_name,
-                ens_id, cat_id, gene_name,
-                pair.get('ensembl_biotype', ''),
-                ref_model.get('biotype', ''),
-                str(ens_struct_div), str(ens_cds_div), ens_detail,
-                str(cat_struct_div), str(cat_cds_div), cat_detail,
-                category,
-                str(ref_model.get('n_exons', 0)),
-                str(ens_model.get('n_exons', 0) if ens_model else 0),
-                str(cat_model.get('n_exons', 0) if cat_model else 0),
-                str(ref_model.get('cds_length', 0)),
-                str(ens_model.get('cds_length', 0) if ens_model else 0),
-                str(cat_model.get('cds_length', 0) if cat_model else 0),
-            ]) + '\n')
+            # Ensembl vs CAT direct deltas
+            if ens_model and cat_model:
+                ens_cat_delta_n = ens_model['n_exons'] - cat_model['n_exons']
+                ens_cat_delta_tx = ens_model['transcript_length'] - cat_model['transcript_length']
+                ens_cat_delta_cds = ens_model['cds_length'] - cat_model['cds_length']
+            else:
+                ens_cat_delta_n = ens_cat_delta_tx = ens_cat_delta_cds = None
+
+            row = (
+                [args.assembly_accession, args.sample_name,
+                 ens_id, cat_id, gene_name,
+                 pair.get('ensembl_biotype', ''),
+                 ref_model.get('biotype', ''),
+                 str(ref_model.get('is_coding', ''))]
+                + model_metric_values(ref_model)
+                + model_metric_values(ens_model)
+                + model_metric_values(cat_model)
+                + delta_values(ens_cmp)
+                + delta_values(cat_cmp)
+                + [_fmt(ens_cat_delta_n), _fmt(ens_cat_delta_tx), _fmt(ens_cat_delta_cds)]
+                + [category]
+            )
+            out.write('\t'.join(row) + '\n')
             n_written += 1
 
-        print(f"Wrote {n_written} divergence records ({n_no_ref} pairs had no reference match)",
-              file=sys.stderr)
+    print(
+        f"Wrote {n_written} divergence records ({n_no_ref} pairs had no reference match)",
+        file=sys.stderr,
+    )
 
 
 if __name__ == "__main__":

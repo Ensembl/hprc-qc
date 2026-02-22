@@ -166,5 +166,7 @@ process AGGREGATE_DIVERGENCE {
     touch divergence/grch38_divergence_cross_tab.tsv
     touch divergence/grch38_divergence_per_assembly.tsv
     touch divergence/grch38_divergence_by_biotype.tsv
+    touch divergence/grch38_divergence_delta_distributions.tsv
+    touch divergence/grch38_divergence_per_assembly_delta_summary.tsv
     """
 }

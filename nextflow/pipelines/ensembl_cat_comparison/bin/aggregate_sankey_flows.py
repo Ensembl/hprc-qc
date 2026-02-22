@@ -114,6 +114,22 @@ def index_files(directory, patterns, label):
     return index
 
 
+def group_biotype(biotype: str) -> str:
+    """Collapse detailed biotype strings into broad display categories."""
+    b = biotype.lower()
+    if 'protein_coding' in b:
+        return 'protein_coding'
+    if 'lncrna' in b or 'lnc_rna' in b:
+        return 'lncRNA'
+    if 'pseudogene' in b or 'pseudogenic' in b:
+        return 'pseudogene'
+    if any(x in b for x in ['snrna', 'snorna', 'mirna', 'trna', 'rrna',
+                              'ncrna', 'antisense', 'tec', 'guide_rna',
+                              'scrna', 'vault_rna', 'y_rna']):
+        return 'other_ncRNA'
+    return 'other'
+
+
 def load_tsv(filepath):
     """Load a single TSV file with robust engine."""
     try:
@@ -191,46 +207,79 @@ def main():
                                 (named['present_in_cat'].astype(str) == 'True')).sum()
             n_named_total = n_named_both + n_named_ens_only + n_named_cat_only
 
-            # Level 2: RBH status
-            n_rbh_total = len(rbh)
-            if 'frac_ensembl_covered' in rbh.columns and 'frac_cat_covered' in rbh.columns:
-                n_rbh_pass = int(
-                    ((rbh['frac_ensembl_covered'].astype(float) >= threshold) &
-                     (rbh['frac_cat_covered'].astype(float) >= threshold)).sum()
-                )
-            else:
-                n_rbh_pass = n_rbh_total
-            n_rbh_fail = n_rbh_total - n_rbh_pass
+            sample = pres['sample_name'].iloc[0] if 'sample_name' in pres.columns else ''
+            del pres
 
-            # Level 3: Transcript concordance (load only if available)
-            n_tx_full = n_tx_partial = n_tx_none = n_tx_total = 0
+            # Level 2: RBH status — build per-pair key index for downstream filtering
+            n_rbh_total = len(rbh)
+            rbh_keys = rbh['ensembl_id'].astype(str) + '|' + rbh['cat_id'].astype(str)
+            bio_col = 'ensembl_biotype' if 'ensembl_biotype' in rbh.columns else None
+            raw_bios = rbh[bio_col].astype(str) if bio_col else pd.Series([''] * len(rbh), index=rbh.index)
+            biotype_by_key = dict(zip(rbh_keys, raw_bios.map(group_biotype)))
+
+            if 'frac_ensembl_covered' in rbh.columns and 'frac_cat_covered' in rbh.columns:
+                pass_mask = ((rbh['frac_ensembl_covered'].astype(float) >= threshold) &
+                             (rbh['frac_cat_covered'].astype(float) >= threshold))
+                pass_pair_keys = set(rbh_keys[pass_mask])
+            else:
+                pass_pair_keys = set(rbh_keys)
+
+            n_rbh_pass = len(pass_pair_keys)
+            n_rbh_fail = n_rbh_total - n_rbh_pass
+            del rbh
+
+            # Level 3: Transcript concordance — restricted to RBH pass genes only
+            n_tx_full = n_tx_partial = n_tx_none = 0
+            full_concordant_keys = set()  # (ens|cat) pairs with concordance_rate == 1.0
+
             if accession in tc_idx:
                 tc = load_tsv(tc_idx[accession])
                 if tc is not None and not tc.empty and 'transcript_concordance_rate' in tc.columns:
+                    tc_keys = tc['ensembl_gene_id'].astype(str) + '|' + tc['cat_gene_id'].astype(str)
+                    tc_pass_mask = tc_keys.isin(pass_pair_keys)
                     rates = tc['transcript_concordance_rate'].astype(float)
-                    n_tx_full = int((rates >= 1.0).sum())
-                    n_tx_partial = int(((rates > 0) & (rates < 1.0)).sum())
-                    n_tx_none = int((rates == 0).sum())
-                    n_tx_total = n_tx_full + n_tx_partial + n_tx_none
-                del tc  # free memory
 
-            # Level 4: CDS integrity (load only if available)
+                    rates_pass = rates[tc_pass_mask]
+                    n_tx_full    = int((rates_pass >= 1.0).sum())
+                    n_tx_partial = int(((rates_pass > 0) & (rates_pass < 1.0)).sum())
+                    n_tx_none    = int((rates_pass == 0).sum())
+
+                    full_concordant_keys = set(tc_keys[tc_pass_mask & (rates >= 1.0)])
+                del tc
+
+            n_tx_total = n_tx_full + n_tx_partial + n_tx_none
+
+            # Level 3b: biotype breakdown of fully concordant genes
+            n_l3b_coding = n_l3b_lncrna = n_l3b_pseudogene = n_l3b_other_ncrna = n_l3b_other = 0
+            for key in full_concordant_keys:
+                bio = biotype_by_key.get(key, 'other')
+                if bio == 'protein_coding':
+                    n_l3b_coding += 1
+                elif bio == 'lncRNA':
+                    n_l3b_lncrna += 1
+                elif bio == 'pseudogene':
+                    n_l3b_pseudogene += 1
+                elif bio == 'other_ncRNA':
+                    n_l3b_other_ncrna += 1
+                else:
+                    n_l3b_other += 1
+            n_l3b_total = n_l3b_coding + n_l3b_lncrna + n_l3b_pseudogene + n_l3b_other_ncrna + n_l3b_other
+
+            # Level 4: CDS integrity — restricted to protein-coding full-concordant genes only
             n_cds_intact = n_cds_partial = n_cds_disrupted = n_cds_total = 0
             if accession in ci_idx:
                 ci = load_tsv(ci_idx[accession])
                 if ci is not None and not ci.empty:
-                    n_cds_total = len(ci)
-                    if 'classification' in ci.columns:
-                        n_cds_intact = int((ci['classification'] == 'Full_Match').sum())
+                    ci_keys = ci['ensembl_gene_id'].astype(str) + '|' + ci['cat_gene_id'].astype(str)
+                    ci_filtered = ci[ci_keys.isin(full_concordant_keys)]
+                    n_cds_total = len(ci_filtered)
+                    if 'classification' in ci_filtered.columns and n_cds_total > 0:
+                        n_cds_intact = int((ci_filtered['classification'] == 'Full_Match').sum())
                         disrupted_classes = {'Internal_Frameshift', 'Complex_Mismatch', 'No_CDS'}
-                        n_cds_disrupted = int(ci['classification'].isin(disrupted_classes).sum())
+                        n_cds_disrupted = int(ci_filtered['classification'].isin(disrupted_classes).sum())
                         n_cds_partial = n_cds_total - n_cds_intact - n_cds_disrupted
-                del ci  # free memory
+                del ci
 
-            sample = pres['sample_name'].iloc[0] if 'sample_name' in pres.columns else ''
-
-            # Free the large DataFrames and reclaim memory
-            del pres, rbh
             gc.collect()
 
             row = {
@@ -248,18 +297,26 @@ def main():
                 'l1_named_ensembl_only': int(n_named_ens_only),
                 'l1_named_cat_only': int(n_named_cat_only),
                 'l1_named_pct_both': round(n_named_both / n_named_total * 100, 2) if n_named_total > 0 else 0,
-                # Level 2
+                # Level 2: RBH pass/fail (denominator = all RBH pairs)
                 'l2_rbh_total': int(n_rbh_total),
                 'l2_rbh_pass': int(n_rbh_pass),
                 'l2_rbh_fail': int(n_rbh_fail),
                 'l2_pct_pass': round(n_rbh_pass / n_rbh_total * 100, 2) if n_rbh_total > 0 else 0,
-                # Level 3
+                # Level 3: transcript concordance (denominator = RBH pass)
                 'l3_tx_total': int(n_tx_total),
                 'l3_tx_full': int(n_tx_full),
                 'l3_tx_partial': int(n_tx_partial),
                 'l3_tx_none': int(n_tx_none),
                 'l3_pct_full': round(n_tx_full / n_tx_total * 100, 2) if n_tx_total > 0 else 0,
-                # Level 4
+                # Level 3b: biotype breakdown (denominator = L3 full concordant)
+                'l3b_total': int(n_l3b_total),
+                'l3b_protein_coding': int(n_l3b_coding),
+                'l3b_lncrna': int(n_l3b_lncrna),
+                'l3b_pseudogene': int(n_l3b_pseudogene),
+                'l3b_other_ncrna': int(n_l3b_other_ncrna),
+                'l3b_other': int(n_l3b_other),
+                'l3b_pct_protein_coding': round(n_l3b_coding / n_l3b_total * 100, 2) if n_l3b_total > 0 else 0,
+                # Level 4: CDS integrity (denominator = coding full-concordant genes)
                 'l4_cds_total': int(n_cds_total),
                 'l4_cds_intact': int(n_cds_intact),
                 'l4_cds_partial': int(n_cds_partial),
@@ -286,6 +343,8 @@ def main():
                 'l1_named_total', 'l1_named_both', 'l1_named_ensembl_only', 'l1_named_cat_only', 'l1_named_pct_both',
                 'l2_rbh_total', 'l2_rbh_pass', 'l2_rbh_fail', 'l2_pct_pass',
                 'l3_tx_total', 'l3_tx_full', 'l3_tx_partial', 'l3_tx_none', 'l3_pct_full',
+                'l3b_total', 'l3b_protein_coding', 'l3b_lncrna', 'l3b_pseudogene',
+                'l3b_other_ncrna', 'l3b_other', 'l3b_pct_protein_coding',
                 'l4_cds_total', 'l4_cds_intact', 'l4_cds_partial', 'l4_cds_disrupted', 'l4_pct_intact',
             ]) + '\n')
 

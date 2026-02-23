@@ -3,6 +3,7 @@ include { AGGREGATE_SANKEY }              from '../../modules/aggregate_results/
 include { AGGREGATE_CODING_INTEGRITY }    from '../../modules/aggregate_results/main'
 include { AGGREGATE_TRANSCRIPT_COUNTS }   from '../../modules/aggregate_results/main'
 include { AGGREGATE_DIVERGENCE }          from '../../modules/aggregate_results/main'
+include { AGGREGATE_CONCORDANCE_VS_REF }  from '../../modules/aggregate_results/main'
 
 workflow AGGREGATE {
     take:
@@ -29,10 +30,18 @@ workflow AGGREGATE {
 
     AGGREGATE_DIVERGENCE(divergence_files)
 
+    AGGREGATE_CONCORDANCE_VS_REF(
+        rbh_files,
+        transcript_concordance_files,
+        coding_integrity_files,
+        divergence_files,
+    )
+
     emit:
     gene_presence_summaries      = AGGREGATE_GENE_PRESENCE.out.summaries
     sankey_summaries             = AGGREGATE_SANKEY.out.summaries
     coding_integrity_summaries   = AGGREGATE_CODING_INTEGRITY.out.summaries
     transcript_count_summaries   = AGGREGATE_TRANSCRIPT_COUNTS.out.summaries
     divergence_summaries         = AGGREGATE_DIVERGENCE.out.summaries
+    concordance_vs_ref_summaries = AGGREGATE_CONCORDANCE_VS_REF.out.summaries
 }

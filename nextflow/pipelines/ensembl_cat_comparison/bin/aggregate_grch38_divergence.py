@@ -135,6 +135,9 @@ def main():
     # biotype -> source ('ensembl'|'cat') -> cds_change_type -> count
     biotype_cds_change_counts = defaultdict(lambda: defaultdict(Counter))
 
+    # (biotype, ens_cds_change_type, cat_cds_change_type) -> count
+    cds_change_cross_tab = defaultdict(int)
+
     # (assembly_accession, sample_name, biotype) -> delta_col -> [values]
     asm_biotype_delta_vals = defaultdict(lambda: defaultdict(list))
 
@@ -224,12 +227,23 @@ def main():
                         biotype_delta_vals[biotype][col].extend(vals)
                         asm_biotype_delta_vals[(accession, sample, biotype)][col].extend(vals)
 
-                # CDS change type tracking
+                # CDS change type tracking (marginals)
                 for src, col in [('ensembl', 'ens_cds_change_type'), ('cat', 'cat_cds_change_type')]:
                     if col in grp.columns:
                         for chg_type, cnt in grp[col].value_counts().items():
                             if pd.notna(chg_type):
                                 biotype_cds_change_counts[biotype][src][str(chg_type)] += int(cnt)
+
+                # CDS change type cross-tab (pairwise ens vs cat)
+                if 'ens_cds_change_type' in grp.columns and 'cat_cds_change_type' in grp.columns:
+                    pair_counts = (
+                        grp[['ens_cds_change_type', 'cat_cds_change_type']]
+                        .dropna()
+                        .groupby(['ens_cds_change_type', 'cat_cds_change_type'])
+                        .size()
+                    )
+                    for (ens_t, cat_t), cnt in pair_counts.items():
+                        cds_change_cross_tab[(biotype, str(ens_t), str(cat_t))] += int(cnt)
 
         del df
         gc.collect()
@@ -353,6 +367,23 @@ def main():
     if cds_change_rows:
         pd.DataFrame(cds_change_rows).to_csv(
             os.path.join(args.output_dir, 'grch38_cds_change_type_by_biotype.tsv'),
+            sep='\t', index=False,
+        )
+
+    # -----------------------------------------------------------------------
+    # Write CDS change type cross-tab by biotype (for alluvial)
+    # -----------------------------------------------------------------------
+    if cds_change_cross_tab:
+        ct_rows = []
+        for (biotype, ens_t, cat_t), cnt in sorted(cds_change_cross_tab.items()):
+            ct_rows.append({
+                'biotype': biotype,
+                'ens_cds_change_type': ens_t,
+                'cat_cds_change_type': cat_t,
+                'count': cnt,
+            })
+        pd.DataFrame(ct_rows).to_csv(
+            os.path.join(args.output_dir, 'grch38_cds_change_type_cross_tab.tsv'),
             sep='\t', index=False,
         )
 

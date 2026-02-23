@@ -168,5 +168,44 @@ process AGGREGATE_DIVERGENCE {
     touch divergence/grch38_divergence_by_biotype.tsv
     touch divergence/grch38_divergence_delta_distributions.tsv
     touch divergence/grch38_divergence_per_assembly_delta_summary.tsv
+    touch divergence/grch38_cds_change_type_cross_tab.tsv
+    touch divergence/grch38_cds_change_type_by_biotype.tsv
+    """
+}
+
+
+process AGGREGATE_CONCORDANCE_VS_REF {
+    label 'process_very_high'
+    conda 'conda-forge::python=3.11 conda-forge::pandas'
+
+    publishDir "${params.outdir}/intermediate_spreadsheets", mode: 'copy'
+
+    input:
+    path(rbh_files, stageAs: 'rbh_staged/*')
+    path(transcript_concordance_files, stageAs: 'tc_staged/*')
+    path(coding_integrity_files, stageAs: 'ci_staged/*')
+    path(divergence_files, stageAs: 'div_staged/*')
+
+    output:
+    path("sankey_plus_divergence/*.tsv"), emit: summaries
+
+    script:
+    """
+    mkdir -p sankey_plus_divergence
+    aggregate_concordance_vs_grch38.py \
+        --rbh-dir rbh_staged \
+        --transcript-concordance-dir tc_staged \
+        --coding-integrity-dir ci_staged \
+        --divergence-dir div_staged \
+        --rbh-coverage-threshold 0.95 \
+        --output-dir sankey_plus_divergence
+    """
+
+    stub:
+    """
+    mkdir -p sankey_plus_divergence
+    touch sankey_plus_divergence/links_per_assembly.tsv
+    touch sankey_plus_divergence/flows_per_assembly.tsv
+    touch sankey_plus_divergence/flows_medians.tsv
     """
 }

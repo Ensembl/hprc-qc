@@ -205,16 +205,22 @@ def load_gene_models_gff(gff_path: str) -> Dict[str, Dict]:
 def load_gencode_models(gtf_path: str) -> Dict[str, Dict]:
     """Load reference gene models from GENCODE GTF keyed by gene_name.
 
-    GENCODE GTF CDS features include the stop codon in their coordinate range,
-    whereas Ensembl/CAT GFF3 CDS features exclude it.  To normalise to the
-    GFF3 convention (CDS = coding sequence without stop codon) we subtract
-    any annotated stop_codon intervals from the CDS length.
+    Convention difference between the annotation sources:
+      - GENCODE GTF: the CDS intervals end *before* the stop codon; the
+        stop_codon is a separate, adjacent (non-overlapping) GTF feature.
+        CDS sum = coding sequence without stop codon.
+      - Ensembl/CAT GFF3: the CDS intervals extend *through* the stop codon;
+        the stop_codon feature overlaps the last CDS interval.
+        CDS sum = coding sequence + stop codon.
+
+    To normalise both sources to the same convention we ADD the annotated
+    stop_codon length to the GENCODE GTF CDS, bringing it in line with GFF3.
     """
     gene_name_map = {}
     gene_to_tx = defaultdict(list)
     tx_to_exons = defaultdict(list)
     tx_to_cds = defaultdict(list)
-    tx_to_stop = defaultdict(list)   # stop_codon intervals to subtract
+    tx_to_stop = defaultdict(list)   # stop_codon intervals to add (GTF CDS excludes stop)
     gene_id_to_biotype = {}
 
     with open_maybe_gzip(gtf_path) as f:
@@ -282,7 +288,7 @@ def load_gencode_models(gtf_path: str) -> Dict[str, Dict]:
             exons = sorted(tx_to_exons.get(best_tx, []))
             cds = tx_to_cds.get(best_tx, [])
             stop_len = sum(e - s + 1 for s, e in tx_to_stop.get(best_tx, []))
-            cds_len = max(0, sum(e - s + 1 for s, e in cds) - stop_len)
+            cds_len = sum(e - s + 1 for s, e in cds) + stop_len  # normalise to GFF3 convention
 
             model = _exon_stats(exons)
             model['cds_length'] = cds_len

@@ -1,0 +1,14 @@
+*.gff3
+*.gz
+*.png
+*.pdf
+*.txt
+
+# Jupyter
+**/.ipynb_checkpoints/
+
+# Local artifacts / outputs
+nextflow/pipelines/ensembl_cat_comparison/notebooks/backups/
+nextflow/pipelines/ensembl_cat_comparison/notebooks/figures/
+nextflow/pipelines/ensembl_cat_comparison/results/
+notebooks/

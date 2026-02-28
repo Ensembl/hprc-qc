@@ -139,6 +139,10 @@ def main():
             div_cat = dv.loc[k]['divergence_category'] if 'divergence_category' in dv.columns else 'insufficient_data'
             gene_name = dv.loc[k]['gene_name'] if 'gene_name' in dv.columns else ''
 
+            # Granular CDS change types (for problematic-gene export)
+            ens_cds_ct = dv.loc[k]['ens_cds_change_type'] if 'ens_cds_change_type' in dv.columns else ''
+            cat_cds_ct = dv.loc[k]['cat_cds_change_type'] if 'cat_cds_change_type' in dv.columns else ''
+
             links_rows.append({
                 'assembly_accession': acc,
                 'sample_name': sample,
@@ -150,6 +154,8 @@ def main():
                 'tx_concordance': txc,
                 'biotype': bio,
                 'cds_class': cds_class,
+                'ens_cds_change_type': ens_cds_ct,
+                'cat_cds_change_type': cat_cds_ct,
                 'divergence_category': div_cat,
             })
 

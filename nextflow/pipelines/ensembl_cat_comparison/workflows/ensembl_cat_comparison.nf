@@ -69,12 +69,17 @@ workflow ENSEMBL_CAT_COMPARISON {
         .map { accession, sample, tsv -> tsv }
         .collect()
 
+    collected_multi_mapping = QC_METRICS.out.multi_mapping
+        .map { accession, sample, tsv -> tsv }
+        .collect()
+
     AGGREGATE(
         collected_gene_presence,
         collected_rbh,
         collected_transcript,
         collected_coding,
-        collected_divergence
+        collected_divergence,
+        collected_multi_mapping
     )
 
     emit:

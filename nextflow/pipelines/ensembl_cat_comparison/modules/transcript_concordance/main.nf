@@ -17,7 +17,7 @@ process TRANSCRIPT_CONCORDANCE {
     calculate_transcript_concordance.py \\
         --ensembl-gff ${ensembl_gff} \\
         --cat-gff ${cat_gff} \\
-        --rbh-pairs ${rbh_pairs} \\
+        --pairs ${rbh_pairs} \\
         --output ${assembly_accession}_transcript_concordance.tsv \\
         --assembly-accession ${assembly_accession} \\
         --sample-name ${sample_name}

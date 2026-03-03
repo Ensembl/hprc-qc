@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 """
-Calculate transcript-level concordance for RBH gene pairs.
+Calculate transcript-level concordance for gene pairs.
 
-For each RBH gene pair, compares transcript structures (exon coordinates)
+For each gene pair, compares transcript structures (exon coordinates)
 and reports exact matches, partial matches, and unmatched transcripts in
 BOTH directions (Ensembl→CAT and CAT→Ensembl).
+
+Accepts both RBH-only pairs (ensembl_id/cat_id columns) and all-pairs
+files (ensembl_gene_id/cat_gene_id columns, with ensembl_biotype).
 
 Usage:
     calculate_transcript_concordance.py \\
         --ensembl-gff <path> \\
         --cat-gff <path> \\
-        --rbh-pairs <path> \\
+        --pairs <path> \\
         --output <path> \\
         --assembly-accession <accession> \\
         --sample-name <sample>
@@ -24,14 +27,20 @@ from typing import Dict, List, Tuple, Set
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Calculate transcript concordance for RBH gene pairs")
+    parser = argparse.ArgumentParser(description="Calculate transcript concordance for gene pairs")
     parser.add_argument("--ensembl-gff", required=True, help="Path to Ensembl GFF3 file")
     parser.add_argument("--cat-gff", required=True, help="Path to CAT GFF3 file")
-    parser.add_argument("--rbh-pairs", required=True, help="Path to RBH pairs TSV")
+    parser.add_argument("--pairs", dest="pairs",
+                        help="Path to gene pairs TSV (ensembl_gene_id/cat_gene_id or ensembl_id/cat_id columns)")
+    parser.add_argument("--rbh-pairs", dest="pairs",
+                        help="Alias for --pairs (backward compatibility)")
     parser.add_argument("--output", required=True, help="Output TSV file")
     parser.add_argument("--assembly-accession", required=True, help="Assembly accession")
     parser.add_argument("--sample-name", required=True, help="Sample name")
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.pairs is None:
+        parser.error("One of --pairs or --rbh-pairs is required")
+    return args
 
 
 def open_maybe_gzip(path: str):
@@ -106,24 +115,35 @@ def load_transcripts_and_exons(gff_path: str) -> Tuple[Dict, Dict]:
     return dict(transcripts_by_gene), dict(exons_by_transcript)
 
 
-def load_rbh_pairs(rbh_path: str) -> List[Tuple[str, str]]:
-    """Load RBH gene pairs from TSV."""
+def load_pairs(pairs_path: str) -> List[Tuple[str, str, str]]:
+    """
+    Load gene pairs from TSV, handling two column-name conventions:
+      - all-pairs format:  ensembl_gene_id / cat_gene_id / ensembl_biotype
+      - rbh-pairs format:  ensembl_id      / cat_id      / (ensembl_biotype optional)
+
+    Returns list of (ensembl_gene_id, cat_gene_id, ensembl_biotype).
+    """
     pairs = []
-    with open(rbh_path, 'r') as f:
+    with open(pairs_path, 'r') as f:
         header = f.readline().strip().split('\t')
 
-        try:
-            ens_id_idx = header.index('ensembl_id')
-            cat_id_idx = header.index('cat_id')
-        except ValueError as e:
-            print(f"Error: Required column not found in RBH file: {e}", file=sys.stderr)
+        ens_col = next((c for c in ['ensembl_gene_id', 'ensembl_id'] if c in header), None)
+        cat_col = next((c for c in ['cat_gene_id', 'cat_id'] if c in header), None)
+
+        if ens_col is None or cat_col is None:
+            print(f"Error: could not find gene ID columns in {pairs_path}", file=sys.stderr)
             print(f"Available columns: {header}", file=sys.stderr)
             sys.exit(1)
 
+        ens_idx = header.index(ens_col)
+        cat_idx = header.index(cat_col)
+        bio_idx = header.index('ensembl_biotype') if 'ensembl_biotype' in header else None
+
         for line in f:
             parts = line.strip().split('\t')
-            if len(parts) > max(ens_id_idx, cat_id_idx):
-                pairs.append((parts[ens_id_idx], parts[cat_id_idx]))
+            if len(parts) > max(ens_idx, cat_idx):
+                biotype = parts[bio_idx] if bio_idx is not None and bio_idx < len(parts) else ''
+                pairs.append((parts[ens_idx], parts[cat_idx], biotype))
     return pairs
 
 
@@ -320,15 +340,15 @@ def main():
     print(f"Loading CAT transcripts from {args.cat_gff}", file=sys.stderr)
     cat_txs, cat_exons = load_transcripts_and_exons(args.cat_gff)
 
-    print(f"Loading RBH pairs from {args.rbh_pairs}", file=sys.stderr)
-    rbh_pairs = load_rbh_pairs(args.rbh_pairs)
+    print(f"Loading gene pairs from {args.pairs}", file=sys.stderr)
+    pairs = load_pairs(args.pairs)
 
-    print(f"Analysing {len(rbh_pairs)} RBH gene pairs (bidirectional)...", file=sys.stderr)
+    print(f"Analysing {len(pairs)} gene pairs (bidirectional)...", file=sys.stderr)
 
     with open(args.output, 'w') as out:
         out.write('\t'.join([
             'assembly_accession', 'sample_name',
-            'ensembl_gene_id', 'cat_gene_id',
+            'ensembl_gene_id', 'cat_gene_id', 'ensembl_biotype',
             # Ensembl → CAT
             'n_ensembl_transcripts', 'n_cat_transcripts',
             'n_ens_exact', 'n_ens_intron_match',
@@ -347,7 +367,7 @@ def main():
             'avg_jaccard_index',            # mean of both directions
         ]) + '\n')
 
-        for ensembl_gene, cat_gene in rbh_pairs:
+        for ensembl_gene, cat_gene, biotype in pairs:
             fwd = _best_match_for_query(
                 ensembl_txs, ensembl_exons,
                 cat_txs, cat_exons,
@@ -368,7 +388,7 @@ def main():
 
             out.write('\t'.join([
                 args.assembly_accession, args.sample_name,
-                ensembl_gene, cat_gene,
+                ensembl_gene, cat_gene, biotype,
                 str(fwd['n_query']), str(fwd['n_target']),
                 str(fwd['n_exact']), str(fwd['n_intron_match']),
                 str(fwd['n_subset']), str(fwd['n_superset']),

@@ -185,6 +185,7 @@ process AGGREGATE_CONCORDANCE_VS_REF {
     path(transcript_concordance_files, stageAs: 'tc_staged/*')
     path(coding_integrity_files, stageAs: 'ci_staged/*')
     path(divergence_files, stageAs: 'div_staged/*')
+    path(multi_mapping_files, stageAs: 'mm_staged/*')
 
     output:
     path("sankey_plus_divergence/*.tsv"), emit: summaries
@@ -197,6 +198,7 @@ process AGGREGATE_CONCORDANCE_VS_REF {
         --transcript-concordance-dir tc_staged \
         --coding-integrity-dir ci_staged \
         --divergence-dir div_staged \
+        --multi-mapping-dir mm_staged \
         --rbh-coverage-threshold 0.95 \
         --output-dir sankey_plus_divergence
     """

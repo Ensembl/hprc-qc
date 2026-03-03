@@ -12,6 +12,7 @@ workflow AGGREGATE {
     transcript_concordance_files // Channel of transcript_concordance TSV files (collected)
     coding_integrity_files       // Channel of coding_integrity TSV files (collected)
     divergence_files             // Channel of grch38_divergence TSV files (collected)
+    multi_mapping_files          // Channel of multi_mapping TSV files (collected)
 
     main:
     // Run all aggregations in parallel
@@ -35,6 +36,7 @@ workflow AGGREGATE {
         transcript_concordance_files,
         coding_integrity_files,
         divergence_files,
+        multi_mapping_files,
     )
 
     emit:

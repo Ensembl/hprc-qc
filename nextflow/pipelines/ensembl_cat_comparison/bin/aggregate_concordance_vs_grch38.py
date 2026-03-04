@@ -19,6 +19,7 @@ Notes:
 import argparse
 import glob
 import os
+import re
 import sys
 from collections import defaultdict, Counter
 
@@ -54,14 +55,22 @@ def group_biotype(biotype: str) -> str:
     return 'other'
 
 
+_ACC_RE = re.compile(r'^(GCA_\d+\.\d+)', re.IGNORECASE)
+
 def load_first(tsv_dir: str, pattern: str) -> dict:
+    """Index per-assembly files by accession.
+
+    Handles both underscore-separated names (e.g. GCA_018466835.2_transcript_concordance.tsv)
+    and dot-separated names produced by hprc_ensembl_cat_overlap.py
+    (e.g. GCA_018466835.2.gene_pairs_rbh.tsv).
+    """
     idx = {}
     for f in glob.glob(os.path.join(tsv_dir, pattern)):
-        try:
-            acc = '_'.join(os.path.basename(f).split('_')[:2])
-            idx[acc] = f
-        except Exception:
-            continue
+        m = _ACC_RE.match(os.path.basename(f))
+        if m:
+            idx[m.group(1)] = f
+        else:
+            print(f"WARNING: could not parse accession from {os.path.basename(f)}", file=sys.stderr)
     return idx
 
 

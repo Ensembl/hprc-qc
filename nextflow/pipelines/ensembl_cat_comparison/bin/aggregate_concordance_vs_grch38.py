@@ -58,7 +58,7 @@ def load_first(tsv_dir: str, pattern: str) -> dict:
     idx = {}
     for f in glob.glob(os.path.join(tsv_dir, pattern)):
         try:
-            acc = os.path.basename(f).split('_')[0]
+            acc = '_'.join(os.path.basename(f).split('_')[:2])
             idx[acc] = f
         except Exception:
             continue

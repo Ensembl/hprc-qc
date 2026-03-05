@@ -3,18 +3,21 @@
 Aggregate per-assembly transcript concordance into intron-chain classification
 distributions by biotype, plus Jaccard index quantiles.
 
-For each gene pair the script determines the *best* intron-chain classification
-across its Ensembl transcripts (Ensembl→CAT direction). Classifications are
-ordered by priority:
+Operates at the **transcript level**: the per-gene concordance TSV already
+contains counts of how many Ensembl transcripts fall into each classification
+(Exact_Match, Intron_Match, …, No_Match).  This script sums those counts
+per assembly × biotype, so the resulting percentages answer:
 
-    Exact_Match > Intron_Match > Intron_Subset > Intron_Superset
-    > Partial_5 > Partial_3 > Other_Partial > No_Match
+    "What fraction of Ensembl transcripts have a [classification] match
+     in the corresponding CAT gene?"
 
-The gene-level best class is then aggregated per assembly × biotype.
+This avoids the optimistic bias of the alternative gene-level approach, where
+a gene with 1/10 exact-matching transcripts would be counted the same as a
+gene with 10/10 exact matches.
 
 Produces two output files:
   - intron_chain_by_biotype_per_assembly.tsv
-        Columns: assembly_accession, biotype, classification, n_genes, pct
+        Columns: assembly_accession, biotype, classification, n_transcripts, pct
   - jaccard_by_biotype_per_assembly.tsv
         Columns: assembly_accession, biotype, n_genes, mean, median,
                  p5, p25, p75, p95
@@ -120,30 +123,17 @@ def find_files(directory):
     return accession_to_file
 
 
-def best_gene_classification(row):
-    """
-    Determine the best intron-chain classification for a gene pair
-    based on the Ensembl→CAT direction counts.
-
-    The columns are: n_ens_exact, n_ens_intron_match, n_ens_subset,
-    n_ens_superset, n_ens_partial_5, n_ens_partial_3, n_ens_other_partial,
-    n_ens_unmatched.
-
-    Returns the highest-priority classification that has count >= 1.
-    """
-    col_map = [
-        ('n_ens_exact',         'Exact_Match'),
-        ('n_ens_intron_match',  'Intron_Match'),
-        ('n_ens_subset',        'Intron_Subset'),
-        ('n_ens_superset',      'Intron_Superset'),
-        ('n_ens_partial_5',     'Partial_5'),
-        ('n_ens_partial_3',     'Partial_3'),
-        ('n_ens_other_partial', 'Other_Partial'),
-    ]
-    for col, cls in col_map:
-        if int(row.get(col, 0)) >= 1:
-            return cls
-    return 'No_Match'
+# Mapping from concordance-TSV column names to classification labels
+_COL_TO_CLASS = [
+    ('n_ens_exact',         'Exact_Match'),
+    ('n_ens_intron_match',  'Intron_Match'),
+    ('n_ens_subset',        'Intron_Subset'),
+    ('n_ens_superset',      'Intron_Superset'),
+    ('n_ens_partial_5',     'Partial_5'),
+    ('n_ens_partial_3',     'Partial_3'),
+    ('n_ens_other_partial', 'Other_Partial'),
+    ('n_ens_unmatched',     'No_Match'),
+]
 
 
 # ---------------------------------------------------------------------------
@@ -154,48 +144,62 @@ def process_assembly(filepath, accession):
     """
     Process a single assembly's transcript concordance file.
 
+    Operates at the **transcript level**: sums the per-gene transcript counts
+    (n_ens_exact, n_ens_intron_match, …, n_ens_unmatched) across all genes
+    in each biotype.  This means a gene with 1 exact + 9 unmatched contributes
+    1 Exact_Match transcript and 9 No_Match transcripts, rather than being
+    counted as one "Exact_Match gene."
+
     Returns:
         class_rows: list of dicts with assembly_accession, biotype,
-                    classification, n_genes
+                    classification, n_transcripts, pct
         jaccard_rows: list of dicts with assembly_accession, biotype,
                       n_genes, mean, median, p5, p25, p75, p95
     """
+    count_cols = [col for col, _ in _COL_TO_CLASS]
+
     df = pd.read_csv(filepath, sep='\t',
-                     usecols=['ensembl_biotype',
-                              'n_ens_exact', 'n_ens_intron_match',
-                              'n_ens_subset', 'n_ens_superset',
-                              'n_ens_partial_5', 'n_ens_partial_3',
-                              'n_ens_other_partial', 'n_ens_unmatched',
-                              'avg_jaccard_index'],
+                     usecols=['ensembl_biotype'] + count_cols +
+                             ['avg_jaccard_index'],
                      dtype={'ensembl_biotype': str})
 
     if df.empty:
         return [], []
 
+    # Ensure count columns are numeric
+    for col in count_cols:
+        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
+
     # Group biotype
     df['biotype'] = df['ensembl_biotype'].map(group_biotype)
 
-    # Assign best gene-level classification
-    df['best_class'] = df.apply(best_gene_classification, axis=1)
-
-    # --- Classification counts per biotype ---
+    # --- Transcript-level classification counts per biotype ---
     class_rows = []
     for biotype in BIOTYPE_ORDER:
         bio_df = df[df['biotype'] == biotype]
-        n_total = len(bio_df)
-        if n_total == 0:
+        if bio_df.empty:
             continue
+
+        # Sum transcript counts across all genes in this biotype
+        totals = {cls: int(bio_df[col].sum()) for col, cls in _COL_TO_CLASS}
+        n_total_tx = sum(totals.values())
+
+        if n_total_tx == 0:
+            continue
+
         for cls in CLASSIFICATION_PRIORITY:
-            n = int((bio_df['best_class'] == cls).sum())
+            n = totals[cls]
             class_rows.append({
                 'assembly_accession': accession,
                 'biotype': biotype,
                 'classification': cls,
-                'n_genes': n,
-                'pct': round(100.0 * n / n_total, 4) if n_total > 0 else 0.0,
+                'n_transcripts': n,
+                'pct': round(100.0 * n / n_total_tx, 4),
             })
 
-    # --- Jaccard quantiles per biotype ---
+    # --- Jaccard quantiles per biotype (stays gene-level) ---
+    # avg_jaccard_index is the mean Jaccard across a gene's transcripts,
+    # so the distribution here shows per-gene average overlap.
     jaccard_rows = []
     for biotype in BIOTYPE_ORDER:
         bio_df = df[df['biotype'] == biotype]
@@ -260,7 +264,8 @@ def main():
     # Print summary
     if not class_df.empty:
         n_asm = class_df['assembly_accession'].nunique()
-        print(f"\nSummary: {n_asm} assemblies", file=sys.stderr)
+        print(f"\nSummary: {n_asm} assemblies (transcript-level aggregation)",
+              file=sys.stderr)
         # Median % per biotype × classification
         medians = (
             class_df.groupby(['biotype', 'classification'])['pct']
@@ -268,7 +273,7 @@ def main():
             .unstack(fill_value=0)
             .reindex(index=BIOTYPE_ORDER, columns=CLASSIFICATION_PRIORITY, fill_value=0)
         )
-        print("\nMedian % across assemblies:", file=sys.stderr)
+        print("\nMedian % of transcripts across assemblies:", file=sys.stderr)
         print(medians.round(1).to_string(), file=sys.stderr)
 
 

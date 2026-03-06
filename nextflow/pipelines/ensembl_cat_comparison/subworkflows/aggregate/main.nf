@@ -4,6 +4,7 @@ include { AGGREGATE_CODING_INTEGRITY }    from '../../modules/aggregate_results/
 include { AGGREGATE_TRANSCRIPT_COUNTS }   from '../../modules/aggregate_results/main'
 include { AGGREGATE_DIVERGENCE }          from '../../modules/aggregate_results/main'
 include { AGGREGATE_CONCORDANCE_VS_REF }  from '../../modules/aggregate_results/main'
+include { AGGREGATE_INTRON_CHAIN_BY_BIOTYPE } from '../../modules/aggregate_results/main'
 
 workflow AGGREGATE {
     take:
@@ -13,6 +14,7 @@ workflow AGGREGATE {
     coding_integrity_files       // Channel of coding_integrity TSV files (collected)
     divergence_files             // Channel of grch38_divergence TSV files (collected)
     multi_mapping_files          // Channel of multi_mapping TSV files (collected)
+    gene_transcript_count_files  // Channel of gene_transcript_counts TSV files (collected)
 
     main:
     // Run all aggregations in parallel
@@ -28,6 +30,11 @@ workflow AGGREGATE {
     AGGREGATE_CODING_INTEGRITY(coding_integrity_files)
 
     AGGREGATE_TRANSCRIPT_COUNTS(transcript_concordance_files)
+
+    AGGREGATE_INTRON_CHAIN_BY_BIOTYPE(
+        transcript_concordance_files,
+        gene_transcript_count_files
+    )
 
     AGGREGATE_DIVERGENCE(divergence_files)
 
@@ -46,4 +53,5 @@ workflow AGGREGATE {
     transcript_count_summaries   = AGGREGATE_TRANSCRIPT_COUNTS.out.summaries
     divergence_summaries         = AGGREGATE_DIVERGENCE.out.summaries
     concordance_vs_ref_summaries = AGGREGATE_CONCORDANCE_VS_REF.out.summaries
+    intron_chain_biotype_summaries = AGGREGATE_INTRON_CHAIN_BY_BIOTYPE.out.summaries
 }

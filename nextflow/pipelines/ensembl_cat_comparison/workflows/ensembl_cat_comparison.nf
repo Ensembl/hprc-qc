@@ -73,13 +73,18 @@ workflow ENSEMBL_CAT_COMPARISON {
         .map { accession, sample, tsv -> tsv }
         .collect()
 
+    collected_gene_counts = QC_METRICS.out.gene_transcript_counts
+        .map { accession, sample, tsv -> tsv }
+        .collect()
+
     AGGREGATE(
         collected_gene_presence,
         collected_rbh,
         collected_transcript,
         collected_coding,
         collected_divergence,
-        collected_multi_mapping
+        collected_multi_mapping,
+        collected_gene_counts
     )
 
     emit:
@@ -91,10 +96,12 @@ workflow ENSEMBL_CAT_COMPARISON {
     gene_presence = QC_METRICS.out.gene_presence
     multi_mapping = QC_METRICS.out.multi_mapping
     grch38_divergence = QC_METRICS.out.grch38_divergence
+    gene_transcript_counts = QC_METRICS.out.gene_transcript_counts
     // Aggregated intermediate spreadsheets
     gene_presence_summaries = AGGREGATE.out.gene_presence_summaries
     sankey_summaries = AGGREGATE.out.sankey_summaries
     coding_integrity_summaries = AGGREGATE.out.coding_integrity_summaries
     transcript_count_summaries = AGGREGATE.out.transcript_count_summaries
     divergence_summaries = AGGREGATE.out.divergence_summaries
+    intron_chain_biotype_summaries = AGGREGATE.out.intron_chain_biotype_summaries
 }

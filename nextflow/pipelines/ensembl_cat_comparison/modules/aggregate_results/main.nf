@@ -211,3 +211,35 @@ process AGGREGATE_CONCORDANCE_VS_REF {
     touch sankey_plus_divergence/flows_medians.tsv
     """
 }
+
+
+process AGGREGATE_INTRON_CHAIN_BY_BIOTYPE {
+    label 'process_very_high'
+    conda 'conda-forge::python=3.11 conda-forge::pandas conda-forge::numpy'
+
+    publishDir "${params.outdir}/intermediate_spreadsheets", mode: 'copy'
+
+    input:
+    path(transcript_concordance_files, stageAs: 'tc_input/*')
+    path(gene_transcript_count_files, stageAs: 'gc_input/*')
+
+    output:
+    path("intron_chain/*.tsv"), emit: summaries
+
+    script:
+    """
+    mkdir -p intron_chain
+    aggregate_intron_chain_by_biotype.py \\
+        --transcript-concordance-dir tc_input \\
+        --output-dir intron_chain \\
+        --all-ensembl-genes-dir gc_input
+    """
+
+    stub:
+    """
+    mkdir -p intron_chain
+    touch intron_chain/intron_chain_by_biotype_per_assembly.tsv
+    touch intron_chain/intron_chain_full_denom_per_assembly.tsv
+    touch intron_chain/jaccard_by_biotype_per_assembly.tsv
+    """
+}

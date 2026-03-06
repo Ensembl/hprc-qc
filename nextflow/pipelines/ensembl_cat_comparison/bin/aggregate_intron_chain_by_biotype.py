@@ -15,17 +15,24 @@ This avoids the optimistic bias of the alternative gene-level approach, where
 a gene with 1/10 exact-matching transcripts would be counted the same as a
 gene with 10/10 exact matches.
 
-Produces two output files:
+Produces two output files (always):
   - intron_chain_by_biotype_per_assembly.tsv
         Columns: assembly_accession, biotype, classification, n_transcripts, pct
+        Denominator: transcripts from paired genes only.
   - jaccard_by_biotype_per_assembly.tsv
         Columns: assembly_accession, biotype, n_genes, mean, median,
                  p5, p25, p75, p95
 
+And one optional output (when --all-ensembl-genes-dir is provided):
+  - intron_chain_full_denom_per_assembly.tsv
+        Same schema as above but denominator includes ALL Ensembl transcripts.
+        Transcripts from genes with no CAT pair appear as "Gene_Not_Shared".
+
 Usage:
     aggregate_intron_chain_by_biotype.py \
         --transcript-concordance-dir <dir> \
-        --output-dir <output_dir>
+        --output-dir <output_dir> \
+        [--all-ensembl-genes-dir <dir>]   # from count_gff_transcripts.py
 """
 
 import argparse
@@ -90,6 +97,11 @@ def parse_args():
                         help="Directory containing *_transcript_concordance.tsv files")
     parser.add_argument("--output-dir", required=True,
                         help="Output directory for aggregated TSVs")
+    parser.add_argument("--all-ensembl-genes-dir", default=None,
+                        help="Optional: directory of *_gene_transcript_counts.tsv "
+                             "files (from count_gff_transcripts.py). When provided, "
+                             "produces a full-denominator output that includes "
+                             "transcripts from unmatched genes as 'Gene_Not_Shared'.")
     return parser.parse_args()
 
 
@@ -140,6 +152,33 @@ _COL_TO_CLASS = [
 # Main
 # ---------------------------------------------------------------------------
 
+def find_gene_count_files(directory):
+    """Find gene transcript count files and index by accession."""
+    accession_to_file = {}
+    for root, _, files in os.walk(directory):
+        for fn in sorted(files):
+            if fn.endswith('_gene_transcript_counts.tsv'):
+                path = os.path.join(root, fn)
+                m = ACCESSION_RE.search(fn)
+                if m:
+                    accession_to_file[m.group(1)] = path
+    return accession_to_file
+
+
+def load_all_ensembl_genes(filepath):
+    """
+    Load the output of count_gff_transcripts.py.
+
+    Returns:
+        DataFrame with columns: gene_id, biotype (grouped), n_transcripts
+    """
+    df = pd.read_csv(filepath, sep='\t',
+                     usecols=['gene_id', 'biotype', 'n_transcripts'],
+                     dtype={'gene_id': str, 'biotype': str})
+    df['biotype_group'] = df['biotype'].map(group_biotype)
+    return df
+
+
 def process_assembly(filepath, accession):
     """
     Process a single assembly's transcript concordance file.
@@ -155,16 +194,20 @@ def process_assembly(filepath, accession):
                     classification, n_transcripts, pct
         jaccard_rows: list of dicts with assembly_accession, biotype,
                       n_genes, mean, median, p5, p25, p75, p95
+        paired_gene_ids: set of ensembl_gene_id values present in the file
     """
     count_cols = [col for col, _ in _COL_TO_CLASS]
 
     df = pd.read_csv(filepath, sep='\t',
-                     usecols=['ensembl_biotype'] + count_cols +
+                     usecols=['ensembl_gene_id', 'ensembl_biotype'] + count_cols +
                              ['avg_jaccard_index'],
-                     dtype={'ensembl_biotype': str})
+                     dtype={'ensembl_gene_id': str, 'ensembl_biotype': str})
 
     if df.empty:
-        return [], []
+        return [], [], set()
+
+    # Track which Ensembl gene IDs are paired (for full-denom computation)
+    paired_gene_ids = set(df['ensembl_gene_id'].dropna().unique())
 
     # Ensure count columns are numeric
     for col in count_cols:
@@ -218,14 +261,14 @@ def process_assembly(filepath, accession):
             'p95': round(float(jac.quantile(0.95)), 6),
         })
 
-    return class_rows, jaccard_rows
+    return class_rows, jaccard_rows, paired_gene_ids
 
 
 def main():
     args = parse_args()
     os.makedirs(args.output_dir, exist_ok=True)
 
-    # Index files
+    # Index concordance files
     acc_files = find_files(args.transcript_concordance_dir)
     print(f"Found {len(acc_files)} transcript concordance files", file=sys.stderr)
 
@@ -233,23 +276,80 @@ def main():
         print("ERROR: No *_transcript_concordance.tsv files found.", file=sys.stderr)
         sys.exit(1)
 
+    # Optionally index all-ensembl-genes count files
+    gene_count_files = {}
+    if args.all_ensembl_genes_dir:
+        gene_count_files = find_gene_count_files(args.all_ensembl_genes_dir)
+        print(f"Found {len(gene_count_files)} gene transcript count files",
+              file=sys.stderr)
+
     all_class_rows = []
     all_jaccard_rows = []
+    all_full_denom_rows = []
 
     for i, (acc, fpath) in enumerate(sorted(acc_files.items()), 1):
         if i % 50 == 0 or i == 1:
             print(f"  Processing {i}/{len(acc_files)}: {acc}", file=sys.stderr)
         try:
-            c_rows, j_rows = process_assembly(fpath, acc)
+            c_rows, j_rows, paired_ids = process_assembly(fpath, acc)
             all_class_rows.extend(c_rows)
             all_jaccard_rows.extend(j_rows)
+
+            # Full-denominator: add unmatched-gene transcripts
+            if acc in gene_count_files:
+                all_genes = load_all_ensembl_genes(gene_count_files[acc])
+                unmatched = all_genes[~all_genes['gene_id'].isin(paired_ids)]
+
+                # Sum unmatched transcripts per biotype
+                unmatched_tx = (
+                    unmatched.groupby('biotype_group')['n_transcripts']
+                    .sum()
+                    .to_dict()
+                )
+
+                # Build full-denom rows: start from paired classification totals
+                # then add Gene_Not_Shared and recompute pct
+                paired_totals = defaultdict(lambda: defaultdict(int))
+                for row in c_rows:
+                    bio = row['biotype']
+                    paired_totals[bio][row['classification']] = row['n_transcripts']
+
+                for biotype in BIOTYPE_ORDER:
+                    paired_by_cls = paired_totals.get(biotype, {})
+                    n_paired_tx = sum(paired_by_cls.values())
+                    n_unmatched_tx = unmatched_tx.get(biotype, 0)
+                    n_total = n_paired_tx + n_unmatched_tx
+
+                    if n_total == 0:
+                        continue
+
+                    # Existing classifications
+                    for cls in CLASSIFICATION_PRIORITY:
+                        n = paired_by_cls.get(cls, 0)
+                        all_full_denom_rows.append({
+                            'assembly_accession': acc,
+                            'biotype': biotype,
+                            'classification': cls,
+                            'n_transcripts': n,
+                            'pct': round(100.0 * n / n_total, 4),
+                        })
+
+                    # New category: Gene_Not_Shared
+                    all_full_denom_rows.append({
+                        'assembly_accession': acc,
+                        'biotype': biotype,
+                        'classification': 'Gene_Not_Shared',
+                        'n_transcripts': n_unmatched_tx,
+                        'pct': round(100.0 * n_unmatched_tx / n_total, 4),
+                    })
+
         except Exception as e:
             print(f"  WARNING: failed on {acc}: {e}", file=sys.stderr)
 
         if i % 100 == 0:
             gc.collect()
 
-    # Write classification output
+    # Write classification output (paired genes only)
     class_df = pd.DataFrame(all_class_rows)
     class_out = os.path.join(args.output_dir, 'intron_chain_by_biotype_per_assembly.tsv')
     class_df.to_csv(class_out, sep='\t', index=False)
@@ -260,6 +360,14 @@ def main():
     jac_out = os.path.join(args.output_dir, 'jaccard_by_biotype_per_assembly.tsv')
     jac_df.to_csv(jac_out, sep='\t', index=False)
     print(f"Wrote {len(jac_df)} rows to {jac_out}", file=sys.stderr)
+
+    # Write full-denominator output (if gene count files were provided)
+    if all_full_denom_rows:
+        full_df = pd.DataFrame(all_full_denom_rows)
+        full_out = os.path.join(
+            args.output_dir, 'intron_chain_full_denom_per_assembly.tsv')
+        full_df.to_csv(full_out, sep='\t', index=False)
+        print(f"Wrote {len(full_df)} rows to {full_out}", file=sys.stderr)
 
     # Print summary
     if not class_df.empty:
@@ -273,8 +381,20 @@ def main():
             .unstack(fill_value=0)
             .reindex(index=BIOTYPE_ORDER, columns=CLASSIFICATION_PRIORITY, fill_value=0)
         )
-        print("\nMedian % of transcripts across assemblies:", file=sys.stderr)
+        print("\nMedian % of transcripts across assemblies (paired genes):",
+              file=sys.stderr)
         print(medians.round(1).to_string(), file=sys.stderr)
+
+        if all_full_denom_rows:
+            full_cls = CLASSIFICATION_PRIORITY + ['Gene_Not_Shared']
+            full_medians = (
+                full_df.groupby(['biotype', 'classification'])['pct']
+                .median()
+                .unstack(fill_value=0)
+                .reindex(index=BIOTYPE_ORDER, columns=full_cls, fill_value=0)
+            )
+            print("\nMedian % of transcripts (full denominator):", file=sys.stderr)
+            print(full_medians.round(1).to_string(), file=sys.stderr)
 
 
 if __name__ == "__main__":

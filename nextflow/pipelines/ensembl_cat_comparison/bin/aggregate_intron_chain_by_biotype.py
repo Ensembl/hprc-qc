@@ -107,6 +107,9 @@ def parse_args():
                              "files (from count_gff_transcripts.py). When provided, "
                              "produces a full-denominator output that includes "
                              "transcripts from unmatched genes as 'Gene_Not_Shared'.")
+    parser.add_argument("--all-cat-genes-dir", default=None,
+                        help="Optional: directory of CAT *_gene_transcript_counts.tsv files. When provided, "
+                             "also produces a full-denominator output for CAT→Ensembl.")
     return parser.parse_args()
 
 
@@ -223,7 +226,7 @@ def process_assembly(filepath, accession):
     all_count_cols = ens_count_cols + cat_count_cols
 
     # Also read n_ensembl_transcripts and n_cat_transcripts for ratio output
-    usecols = (['ensembl_gene_id', 'ensembl_biotype',
+    usecols = (['ensembl_gene_id', 'cat_gene_id', 'ensembl_biotype',
                 'n_ensembl_transcripts', 'n_cat_transcripts'] +
                all_count_cols + ['avg_jaccard_index'])
 
@@ -233,8 +236,9 @@ def process_assembly(filepath, accession):
     if df.empty:
         return [], [], [], set()
 
-    # Track which Ensembl gene IDs are paired (for full-denom computation)
-    paired_gene_ids = set(df['ensembl_gene_id'].dropna().unique())
+    # Track which Ensembl/CAT gene IDs are paired (for full-denom computation)
+    paired_gene_ids_ens = set(df['ensembl_gene_id'].dropna().unique())
+    paired_gene_ids_cat = set(df['cat_gene_id'].dropna().unique())
 
     # Ensure count columns are numeric
     for col in all_count_cols + ['n_ensembl_transcripts', 'n_cat_transcripts']:
@@ -313,7 +317,7 @@ def process_assembly(filepath, accession):
             'p95': round(float(jac.quantile(0.95)), 6),
         })
 
-    return class_rows, jaccard_rows, ratio_rows, paired_gene_ids
+    return class_rows, jaccard_rows, ratio_rows, paired_gene_ids_ens, paired_gene_ids_cat
 
 
 def main():
@@ -328,11 +332,17 @@ def main():
         print("ERROR: No *_transcript_concordance.tsv files found.", file=sys.stderr)
         sys.exit(1)
 
-    # Optionally index all-ensembl-genes count files
-    gene_count_files = {}
+    # Optionally index Ensembl and CAT all-genes count files
+    gene_count_files_ens = {}
     if args.all_ensembl_genes_dir:
-        gene_count_files = find_gene_count_files(args.all_ensembl_genes_dir)
-        print(f"Found {len(gene_count_files)} gene transcript count files",
+        gene_count_files_ens = find_gene_count_files(args.all_ensembl_genes_dir)
+        print(f"Found {len(gene_count_files_ens)} Ensembl gene transcript count files",
+              file=sys.stderr)
+
+    gene_count_files_cat = {}
+    if getattr(args, 'all_cat_genes_dir', None):
+        gene_count_files_cat = find_gene_count_files(args.all_cat_genes_dir)
+        print(f"Found {len(gene_count_files_cat)} CAT gene transcript count files",
               file=sys.stderr)
 
     all_class_rows = []
@@ -344,29 +354,23 @@ def main():
         if i % 50 == 0 or i == 1:
             print(f"  Processing {i}/{len(acc_files)}: {acc}", file=sys.stderr)
         try:
-            c_rows, j_rows, r_rows, paired_ids = process_assembly(fpath, acc)
+            c_rows, j_rows, r_rows, paired_ids_ens, paired_ids_cat = process_assembly(fpath, acc)
             all_class_rows.extend(c_rows)
             all_jaccard_rows.extend(j_rows)
             all_ratio_rows.extend(r_rows)
 
-            # Full-denominator: add unmatched-gene transcripts
-            # (Ensembl→CAT direction only, since we don't have a full CAT gene list)
-            if acc in gene_count_files:
-                all_genes = load_all_ensembl_genes(gene_count_files[acc])
-                unmatched = all_genes[~all_genes['gene_id'].isin(paired_ids)]
+            # Full-denominator: add unmatched-gene transcripts for Ensembl→CAT and CAT→Ensembl
+            if acc in gene_count_files_ens:
+                all_genes = load_all_ensembl_genes(gene_count_files_ens[acc])
+                unmatched = all_genes[~all_genes['gene_id'].isin(paired_ids_ens)]
 
-                # Sum unmatched transcripts per biotype
                 unmatched_tx = (
                     unmatched.groupby('biotype_group')['n_transcripts']
-                    .sum()
-                    .to_dict()
+                    .sum().to_dict()
                 )
 
-                # Build full-denom rows: start from Ensembl→CAT paired totals
-                # then add Gene_Not_Shared and recompute pct
                 paired_totals = defaultdict(lambda: defaultdict(int))
-                ens_rows = [r for r in c_rows
-                            if r['direction'] == 'Ensembl_to_CAT']
+                ens_rows = [r for r in c_rows if r['direction'] == 'Ensembl_to_CAT']
                 for row in ens_rows:
                     bio = row['biotype']
                     paired_totals[bio][row['classification']] = row['n_transcripts']
@@ -376,11 +380,8 @@ def main():
                     n_paired_tx = sum(paired_by_cls.values())
                     n_unmatched_tx = unmatched_tx.get(biotype, 0)
                     n_total = n_paired_tx + n_unmatched_tx
-
                     if n_total == 0:
                         continue
-
-                    # Existing classifications
                     for cls in CLASSIFICATION_PRIORITY:
                         n = paired_by_cls.get(cls, 0)
                         all_full_denom_rows.append({
@@ -391,11 +392,50 @@ def main():
                             'n_transcripts': n,
                             'pct': round(100.0 * n / n_total, 4),
                         })
-
-                    # New category: Gene_Not_Shared
                     all_full_denom_rows.append({
                         'assembly_accession': acc,
-                        'direction': 'Ensembl_to_CAT',
+                        'direction': 'Ensembl_to__CAT' if False else 'Ensembl_to_CAT',
+                        'biotype': biotype,
+                        'classification': 'Gene_Not_Shared',
+                        'n_transcripts': n_unmatched_tx,
+                        'pct': round(100.0 * n_unmatched_tx / n_total, 4),
+                    })
+
+            if acc in gene_count_files_cat:
+                all_cat_genes = load_all_ensembl_genes(gene_count_files_cat[acc])
+                unmatched_cat = all_cat_genes[~all_cat_genes['gene_id'].isin(paired_ids_cat)]
+
+                unmatched_tx_cat = (
+                    unmatched_cat.groupby('biotype_group')['n_transcripts']
+                    .sum().to_dict()
+                )
+
+                paired_totals_cat = defaultdict(lambda: defaultdict(int))
+                cat_rows = [r for r in c_rows if r['direction'] == 'CAT_to_Ensembl']
+                for row in cat_rows:
+                    bio = row['biotype']
+                    paired_totals_cat[bio][row['classification']] = row['n_transcripts']
+
+                for biotype in BIOTYPE_ORDER:
+                    paired_by_cls = paired_totals_cat.get(biotype, {})
+                    n_paired_tx = sum(paired_by_cls.values())
+                    n_unmatched_tx = unmatched_tx_cat.get(biotype, 0)
+                    n_total = n_paired_tx + n_unmatched_tx
+                    if n_total == 0:
+                        continue
+                    for cls in CLASSIFICATION_PRIORITY:
+                        n = paired_by_cls.get(cls, 0)
+                        all_full_denom_rows.append({
+                            'assembly_accession': acc,
+                            'direction': 'CAT_to_Ensembl',
+                            'biotype': biotype,
+                            'classification': cls,
+                            'n_transcripts': n,
+                            'pct': round(100.0 * n / n_total, 4),
+                        })
+                    all_full_denom_rows.append({
+                        'assembly_accession': acc,
+                        'direction': 'CAT_to_Ensembl',
                         'biotype': biotype,
                         'classification': 'Gene_Not_Shared',
                         'n_transcripts': n_unmatched_tx,

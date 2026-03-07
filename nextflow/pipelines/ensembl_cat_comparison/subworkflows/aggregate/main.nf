@@ -14,7 +14,8 @@ workflow AGGREGATE {
     coding_integrity_files       // Channel of coding_integrity TSV files (collected)
     divergence_files             // Channel of grch38_divergence TSV files (collected)
     multi_mapping_files          // Channel of multi_mapping TSV files (collected)
-    gene_transcript_count_files  // Channel of gene_transcript_counts TSV files (collected)
+    gene_transcript_count_files  // Channel of Ensembl gene_transcript_counts TSV files (collected)
+    cat_gene_transcript_count_files // Channel of CAT gene_transcript_counts TSV files (collected)
 
     main:
     // Run all aggregations in parallel
@@ -33,7 +34,8 @@ workflow AGGREGATE {
 
     AGGREGATE_INTRON_CHAIN_BY_BIOTYPE(
         transcript_concordance_files,
-        gene_transcript_count_files
+        gene_transcript_count_files,
+        cat_gene_transcript_count_files
     )
 
     AGGREGATE_DIVERGENCE(divergence_files)

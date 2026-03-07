@@ -4,6 +4,7 @@ include { GENE_PRESENCE }         from '../../modules/gene_presence/main'
 include { MULTI_MAPPING }         from '../../modules/multi_mapping/main'
 include { GRCH38_DIVERGENCE }     from '../../modules/grch38_divergence/main'
 include { COUNT_GFF_TRANSCRIPTS } from '../../modules/count_gff_transcripts/main'
+include { COUNT_CAT_GFF_TRANSCRIPTS } from '../../modules/count_cat_gff_transcripts/main'
 
 workflow QC_METRICS {
     take:
@@ -21,6 +22,7 @@ workflow QC_METRICS {
             multi: tuple(accession, sample, all_pairs_tsv)
             divergence: tuple(accession, sample, ensembl_gff, cat_gff, rbh_tsv)
             gff_only: tuple(accession, sample, ensembl_gff)
+            cat_gff_only: tuple(accession, sample, cat_gff)
         }
         .set { qc_inputs }
 
@@ -31,6 +33,7 @@ workflow QC_METRICS {
     MULTI_MAPPING(qc_inputs.multi)
     GRCH38_DIVERGENCE(qc_inputs.divergence, gencode_gtf.first())
     COUNT_GFF_TRANSCRIPTS(qc_inputs.gff_only)
+    COUNT_CAT_GFF_TRANSCRIPTS(qc_inputs.cat_gff_only)
 
     emit:
     transcript_concordance = TRANSCRIPT_CONCORDANCE.out.metrics
@@ -39,4 +42,5 @@ workflow QC_METRICS {
     multi_mapping = MULTI_MAPPING.out.metrics
     grch38_divergence = GRCH38_DIVERGENCE.out.metrics
     gene_transcript_counts = COUNT_GFF_TRANSCRIPTS.out.counts
+    cat_gene_transcript_counts = COUNT_CAT_GFF_TRANSCRIPTS.out.cat_counts
 }

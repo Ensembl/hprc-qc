@@ -222,6 +222,7 @@ process AGGREGATE_INTRON_CHAIN_BY_BIOTYPE {
     input:
     path(transcript_concordance_files, stageAs: 'tc_input/*')
     path(gene_transcript_count_files, stageAs: 'gc_input/*')
+    path(cat_gene_transcript_count_files, stageAs: 'gc_cat_input/*')
 
     output:
     path("intron_chain/*.tsv"), emit: summaries
@@ -232,7 +233,8 @@ process AGGREGATE_INTRON_CHAIN_BY_BIOTYPE {
     aggregate_intron_chain_by_biotype.py \\
         --transcript-concordance-dir tc_input \\
         --output-dir intron_chain \\
-        --all-ensembl-genes-dir gc_input
+        --all-ensembl-genes-dir gc_input \\
+        --all-cat-genes-dir gc_cat_input
     """
 
     stub:

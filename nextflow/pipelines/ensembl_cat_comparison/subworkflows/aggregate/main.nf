@@ -16,6 +16,9 @@ workflow AGGREGATE {
     multi_mapping_files          // Channel of multi_mapping TSV files (collected)
     gene_transcript_count_files  // Channel of Ensembl gene_transcript_counts TSV files (collected)
     cat_gene_transcript_count_files // Channel of CAT gene_transcript_counts TSV files (collected)
+    gff_feature_counts // Channel of per-assembly feature_counts.tsv (collected)
+    gff_gene_metrics   // Channel of per-assembly gene_metrics.tsv (collected)
+    gff_tx_metrics     // Channel of per-assembly tx_metrics.tsv (collected)
 
     main:
     // Run all aggregations in parallel
@@ -37,6 +40,8 @@ workflow AGGREGATE {
         gene_transcript_count_files,
         cat_gene_transcript_count_files
     )
+
+    // No aggregator yet for gff_compare: the notebook will read them directly from qc_metrics
 
     AGGREGATE_DIVERGENCE(divergence_files)
 

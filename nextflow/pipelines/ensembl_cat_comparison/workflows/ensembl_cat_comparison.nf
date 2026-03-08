@@ -81,6 +81,16 @@ workflow ENSEMBL_CAT_COMPARISON {
         .map { accession, sample, tsv -> tsv }
         .collect()
 
+    collected_gff_feature_counts = QC_METRICS.out.gff_feature_counts
+        .map { accession, sample, tsv -> tsv }
+        .collect()
+    collected_gff_gene_metrics = QC_METRICS.out.gff_gene_metrics
+        .map { accession, sample, tsv -> tsv }
+        .collect()
+    collected_gff_tx_metrics = QC_METRICS.out.gff_tx_metrics
+        .map { accession, sample, tsv -> tsv }
+        .collect()
+
     AGGREGATE(
         collected_gene_presence,
         collected_rbh,
@@ -89,7 +99,10 @@ workflow ENSEMBL_CAT_COMPARISON {
         collected_divergence,
         collected_multi_mapping,
         collected_gene_counts,
-        collected_cat_gene_counts
+        collected_cat_gene_counts,
+        collected_gff_feature_counts,
+        collected_gff_gene_metrics,
+        collected_gff_tx_metrics
     )
 
     emit:
@@ -102,6 +115,9 @@ workflow ENSEMBL_CAT_COMPARISON {
     multi_mapping = QC_METRICS.out.multi_mapping
     grch38_divergence = QC_METRICS.out.grch38_divergence
     gene_transcript_counts = QC_METRICS.out.gene_transcript_counts
+    gff_feature_counts = QC_METRICS.out.gff_feature_counts
+    gff_gene_metrics   = QC_METRICS.out.gff_gene_metrics
+    gff_tx_metrics     = QC_METRICS.out.gff_tx_metrics
     // Aggregated intermediate spreadsheets
     gene_presence_summaries = AGGREGATE.out.gene_presence_summaries
     sankey_summaries = AGGREGATE.out.sankey_summaries

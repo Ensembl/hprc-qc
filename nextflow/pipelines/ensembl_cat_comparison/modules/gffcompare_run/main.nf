@@ -2,8 +2,7 @@ process GFFCOMPARE_RUN {
     tag "${assembly_accession}_${sample_name}_${direction}"
     label 'process_low'
     conda 'bioconda::gffcompare'
-    // Containerized gffcompare; override with --gffcompare_container if needed
-    container "quay.io/biocontainers/gffcompare:0.10.6--h2d50403_0"
+    container "quay.io/biocontainers/gffcompare:0.12.6--h4ac6f70_2"
 
     publishDir "${params.outdir}/qc_metrics/${assembly_accession}", mode: 'copy'
 
@@ -18,10 +17,8 @@ process GFFCOMPARE_RUN {
     """
     set -euo pipefail
     mkdir -p gffcompare
-    # Run gffcompare with the reference and query GTFs, using direction as prefix
     gffcompare -r ref.gtf -o "${direction}" qry.gtf || true
 
-    # Locate outputs robustly across gffcompare versions without relying on ls/head
     tmap_src=""
     for f in "${direction}"*.tmap *.tmap; do
       if [ -f "$f" ]; then tmap_src="$f"; break; fi
@@ -35,7 +32,6 @@ process GFFCOMPARE_RUN {
       done
     fi
 
-    # Normalize outputs and copy to standardized paths
     if [ -n "${tmap_src:-}" ] && [ -f "$tmap_src" ]; then
         cp "$tmap_src" "gffcompare/tmap_${direction}.tsv"
     else

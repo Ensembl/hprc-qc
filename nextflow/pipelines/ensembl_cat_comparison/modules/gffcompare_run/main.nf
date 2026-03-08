@@ -21,15 +21,29 @@ process GFFCOMPARE_RUN {
     # Run gffcompare with the reference and query GTFs, using direction as prefix
     gffcompare -r ref.gtf -o "${direction}" qry.gtf || true
 
+    # Locate outputs robustly across gffcompare versions without relying on ls/head
+    tmap_src=""
+    for f in "${direction}"*.tmap *.tmap; do
+      if [ -f "$f" ]; then tmap_src="$f"; break; fi
+    done
+    stats_src=""
+    if [ -f "${direction}.stats" ]; then
+      stats_src="${direction}.stats"
+    else
+      for f in *.stats; do
+        if [ -f "$f" ]; then stats_src="$f"; break; fi
+      done
+    fi
+
     # Normalize outputs and copy to standardized paths
-    if [ -f "${direction}.tmap" ]; then
-        cp "${direction}.tmap" "gffcompare/tmap_${direction}.tsv"
+    if [ -n "${tmap_src:-}" ] && [ -f "$tmap_src" ]; then
+        cp "$tmap_src" "gffcompare/tmap_${direction}.tsv"
     else
         : > "gffcompare/tmap_${direction}.tsv"
     fi
 
-    if [ -f "${direction}.stats" ]; then
-        cp "${direction}.stats" "gffcompare/stats_${direction}.txt"
+    if [ -n "${stats_src:-}" ] && [ -f "$stats_src" ]; then
+        cp "$stats_src" "gffcompare/stats_${direction}.txt"
     else
         : > "gffcompare/stats_${direction}.txt"
     fi

@@ -1,0 +1,144 @@
+Mar-08 09:54:42.183 [main] DEBUG nextflow.cli.Launcher - $> nextflow run tmp_test_gffcmp.nf -stub-run -with-conda
+Mar-08 09:54:42.221 [main] INFO  nextflow.cli.CmdRun - N E X T F L O W  ~  version 25.10.2
+Mar-08 09:54:42.230 [main] DEBUG nextflow.plugin.PluginsFacade - Setting up plugin manager > mode=prod; embedded=false; plugins-dir=/Users/jackt/.nextflow/plugins; core-plugins: nf-amazon@3.4.2,nf-azure@1.20.2,nf-cloudcache@0.5.0,nf-codecommit@0.5.0,nf-console@1.3.0,nf-google@1.23.3,nf-k8s@1.2.2,nf-tower@1.17.3,nf-wave@1.16.1
+Mar-08 09:54:42.240 [main] INFO  o.pf4j.DefaultPluginStatusProvider - Enabled plugins: []
+Mar-08 09:54:42.241 [main] INFO  o.pf4j.DefaultPluginStatusProvider - Disabled plugins: []
+Mar-08 09:54:42.242 [main] INFO  org.pf4j.DefaultPluginManager - PF4J version 3.12.0 in 'deployment' mode
+Mar-08 09:54:42.249 [main] DEBUG nextflow.util.RetryConfig - Missing nextflow session - using default retry config
+Mar-08 09:54:42.312 [main] INFO  org.pf4j.AbstractPluginManager - No plugins
+Mar-08 09:54:42.339 [main] DEBUG nextflow.plugin.PluginsFacade - Plugins default=[]
+Mar-08 09:54:42.339 [main] DEBUG nextflow.plugin.PluginsFacade - Plugins resolved requirement=[nf-tower@1.17.3]
+Mar-08 09:54:42.508 [main] DEBUG n.plugin.HttpPluginRepository - Registry request: https://registry.nextflow.io/api/v1/plugins/dependencies?plugins=nf-tower%401.17.3&nextflowVersion=25.10.2
+- code: 200
+- body: {"plugins":[{"id":"nf-tower","releases":[{"version":"1.17.3","url":"https://registry.nextflow.io/api/v1/plugins/nf-tower/1.17.3/download/nf-tower-1.17.3.zip","date":"2025-11-28T19:27:13.005298Z","sha512sum":"d07798f2a885dab0bb99f4a90fc1e75a2e1d88ad7c3277335b5a66511c99052a1d9846e68eb77897782b88238fdbc8c2b6ec6fbb0d6b56da429f28f47943b053","requires":">=25.09.2-edge","dependsOn":[],"status":"PUBLISHED"}],"projectUrl":"https://github.com/nextflow-io/nf-tower","provider":"nextflow-io"}]}
+Mar-08 09:54:42.525 [main] DEBUG nextflow.plugin.PluginUpdater - Installing plugin nf-tower version: 1.17.3
+Mar-08 09:54:42.530 [main] INFO  org.pf4j.AbstractPluginManager - Plugin 'nf-tower@1.17.3' resolved
+Mar-08 09:54:42.530 [main] INFO  org.pf4j.AbstractPluginManager - Start plugin 'nf-tower@1.17.3'
+Mar-08 09:54:42.538 [main] DEBUG nextflow.plugin.BasePlugin - Plugin started nf-tower@1.17.3
+Mar-08 09:54:42.546 [main] DEBUG n.secret.LocalSecretsProvider - Secrets store: /Users/jackt/.nextflow/secrets/store.json
+Mar-08 09:54:42.551 [main] DEBUG nextflow.secret.SecretsLoader - Discovered secrets providers: [nextflow.secret.LocalSecretsProvider@37303f12] - activable => nextflow.secret.LocalSecretsProvider@37303f12
+Mar-08 09:54:42.555 [main] DEBUG nextflow.cli.CmdRun - Applied DSL=2 from script declaration
+Mar-08 09:54:42.561 [main] INFO  nextflow.cli.CmdRun - Launching `tmp_test_gffcmp.nf` [festering_easley] DSL2 - revision: 2f63b6e693
+Mar-08 09:54:42.586 [main] DEBUG nextflow.Session - Session UUID: 93565cfd-48d9-4c50-a141-6c2affa18092
+Mar-08 09:54:42.586 [main] DEBUG nextflow.Session - Run name: festering_easley
+Mar-08 09:54:42.586 [main] DEBUG nextflow.Session - Executor pool size: 12
+Mar-08 09:54:42.590 [main] DEBUG nextflow.file.FilePorter - File porter settings maxRetries=3; maxTransfers=50; pollTimeout=null
+Mar-08 09:54:42.592 [main] DEBUG nextflow.util.ThreadPoolBuilder - Creating thread pool 'FileTransfer' minSize=10; maxSize=36; workQueue=LinkedBlockingQueue[-1]; allowCoreThreadTimeout=false
+Mar-08 09:54:42.603 [main] DEBUG nextflow.cli.CmdRun - 
+  Version: 25.10.2 build 10555
+  Created: 28-11-2025 19:24 UTC (19:24 BST)
+  System: Mac OS X 26.3.1
+  Runtime: Groovy 4.0.28 on OpenJDK 64-Bit Server VM 17.0.14+7-LTS
+  Encoding: UTF-8 (UTF-8)
+  Process: 20151@JK9GCJK95J [192.168.0.16]
+  CPUs: 12 - Mem: 24 GB (229.8 MB) - Swap: 11 GB (1.1 GB)
+Mar-08 09:54:42.610 [main] DEBUG nextflow.Session - Work-dir: /Users/jackt/projects/hprc-qc/work [Mac OS X]
+Mar-08 09:54:42.610 [main] DEBUG nextflow.Session - Script base path does not exist or is not a directory: /Users/jackt/projects/hprc-qc/bin
+Mar-08 09:54:42.616 [main] DEBUG nextflow.executor.ExecutorFactory - Extension executors providers=[]
+Mar-08 09:54:42.621 [main] DEBUG nextflow.Session - Observer factory (v2): LinObserverFactory
+Mar-08 09:54:42.622 [main] DEBUG nextflow.Session - Observer factory (v2): DefaultObserverFactory
+Mar-08 09:54:42.624 [main] DEBUG nextflow.Session - Observer factory (v2): TowerFactory
+Mar-08 09:54:42.642 [main] DEBUG nextflow.cache.CacheFactory - Using Nextflow cache factory: nextflow.cache.DefaultCacheFactory
+Mar-08 09:54:42.646 [main] DEBUG nextflow.util.CustomThreadPool - Creating default thread pool > poolSize: 13; maxThreads: 1000
+Mar-08 09:54:42.670 [main] DEBUG nextflow.Session - Session start
+Mar-08 09:54:42.906 [main] DEBUG nextflow.script.ScriptRunner - > Launching execution
+Mar-08 09:54:43.061 [main] DEBUG nextflow.script.ScriptRunner - Parsed script files:
+  Script_cf9e2c497c3f0e73: /Users/jackt/projects/hprc-qc/nextflow/pipelines/ensembl_cat_comparison/modules/gffcompare_run/main.nf
+  Script_85682ba9a265ff04: /Users/jackt/projects/hprc-qc/nextflow/pipelines/ensembl_cat_comparison/modules/gff_to_gtf/main.nf
+  Script_a2f61086adf22bc8: /Users/jackt/projects/hprc-qc/tmp_test_gffcmp.nf
+Mar-08 09:54:43.066 [main] DEBUG n.trace.WorkflowStatsObserver - Workflow completed > WorkflowStats[succeededCount=0; failedCount=0; ignoredCount=0; cachedCount=0; pendingCount=0; submittedCount=0; runningCount=0; retriesCount=0; abortedCount=0; succeedDuration=0ms; failedDuration=0ms; cachedDuration=0ms;loadCpus=0; loadMemory=0; peakRunning=0; peakCpus=0; peakMemory=0; ]
+Mar-08 09:54:43.067 [main] ERROR nextflow.cli.Launcher - Module compilation error
+- file : /Users/jackt/projects/hprc-qc/nextflow/pipelines/ensembl_cat_comparison/modules/gffcompare_parse/main.nf
+- cause: token recognition error at: '(' @ line 39, column 28.
+               code = (c>0 ? $(c) : "")
+                              ^
+
+1 error
+
+nextflow.exception.ScriptCompilationException: Module compilation error
+- file : /Users/jackt/projects/hprc-qc/nextflow/pipelines/ensembl_cat_comparison/modules/gffcompare_parse/main.nf
+- cause: token recognition error at: '(' @ line 39, column 28.
+               code = (c>0 ? $(c) : "")
+                              ^
+
+1 error
+
+	at nextflow.script.parser.v1.ScriptLoaderV1.parse0(ScriptLoaderV1.groovy:204)
+	at nextflow.script.parser.v1.ScriptLoaderV1.parse(ScriptLoaderV1.groovy:215)
+	at nextflow.script.parser.v1.ScriptLoaderV1.runScript(ScriptLoaderV1.groovy:230)
+	at nextflow.script.IncludeDef.memoizedMethodPriv$loadModuleV1PathMapSession(IncludeDef.groovy:166)
+	at nextflow.script.IncludeDef.access$1(IncludeDef.groovy)
+	at nextflow.script.IncludeDef$__clinit__closure3.doCall(IncludeDef.groovy)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
+	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:569)
+	at org.codehaus.groovy.reflection.CachedMethod.invoke(CachedMethod.java:343)
+	at groovy.lang.MetaMethod.doMethodInvoke(MetaMethod.java:328)
+	at org.codehaus.groovy.runtime.metaclass.ClosureMetaClass.invokeMethod(ClosureMetaClass.java:280)
+	at groovy.lang.MetaClassImpl.invokeMethod(MetaClassImpl.java:1007)
+	at groovy.lang.Closure.call(Closure.java:433)
+	at org.codehaus.groovy.runtime.memoize.Memoize$MemoizeFunction.lambda$call$0(Memoize.java:137)
+	at org.codehaus.groovy.runtime.memoize.ConcurrentCommonCache.getAndPut(ConcurrentCommonCache.java:137)
+	at org.codehaus.groovy.runtime.memoize.ConcurrentCommonCache.getAndPut(ConcurrentCommonCache.java:113)
+	at org.codehaus.groovy.runtime.memoize.Memoize$MemoizeFunction.call(Memoize.java:136)
+	at nextflow.script.IncludeDef.loadModuleV1(IncludeDef.groovy)
+	at nextflow.script.IncludeDef.load0(IncludeDef.groovy:113)
+	at org.codehaus.groovy.vmplugin.v8.IndyInterface.fromCache(IndyInterface.java:321)
+	at Script_a2f61086adf22bc8.runScript(Script_a2f61086adf22bc8:6)
+	at nextflow.script.BaseScript.run0(BaseScript.groovy:218)
+	at nextflow.script.BaseScript.run(BaseScript.groovy:260)
+	at nextflow.script.parser.v1.ScriptLoaderV1.runScript(ScriptLoaderV1.groovy:246)
+	at nextflow.script.parser.v1.ScriptLoaderV1.runScript(ScriptLoaderV1.groovy)
+	at nextflow.script.ScriptRunner.run(ScriptRunner.groovy:246)
+	at nextflow.script.ScriptRunner.execute(ScriptRunner.groovy:139)
+	at nextflow.cli.CmdRun.run(CmdRun.groovy:429)
+	at nextflow.cli.Launcher.run(Launcher.groovy:515)
+	at nextflow.cli.Launcher.main(Launcher.groovy:675)
+Caused by: org.codehaus.groovy.control.MultipleCompilationErrorsException: startup failed:
+Script_0d8f7bfa875e317d: 39: token recognition error at: '(' @ line 39, column 28.
+               code = (c>0 ? $(c) : "")
+                              ^
+
+1 error
+
+	at org.codehaus.groovy.control.ErrorCollector.failIfErrors(ErrorCollector.java:292)
+	at org.codehaus.groovy.control.ErrorCollector.addFatalError(ErrorCollector.java:148)
+	at org.apache.groovy.parser.antlr4.AstBuilder.collectSyntaxError(AstBuilder.java:4739)
+	at org.apache.groovy.parser.antlr4.AstBuilder.access$100(AstBuilder.java:169)
+	at org.apache.groovy.parser.antlr4.AstBuilder$3.syntaxError(AstBuilder.java:4750)
+	at groovyjarjarantlr4.v4.runtime.ProxyErrorListener.syntaxError(ProxyErrorListener.java:44)
+	at groovyjarjarantlr4.v4.runtime.Lexer.notifyListeners(Lexer.java:381)
+	at groovyjarjarantlr4.v4.runtime.Lexer.nextToken(Lexer.java:145)
+	at groovyjarjarantlr4.v4.runtime.BufferedTokenStream.fetch(BufferedTokenStream.java:170)
+	at groovyjarjarantlr4.v4.runtime.BufferedTokenStream.sync(BufferedTokenStream.java:153)
+	at groovyjarjarantlr4.v4.runtime.BufferedTokenStream.consume(BufferedTokenStream.java:137)
+	at groovyjarjarantlr4.v4.runtime.atn.ParserATNSimulator.execDFA(ParserATNSimulator.java:562)
+	at groovyjarjarantlr4.v4.runtime.atn.ParserATNSimulator.adaptivePredict(ParserATNSimulator.java:400)
+	at groovyjarjarantlr4.v4.runtime.atn.ParserATNSimulator.adaptivePredict(ParserATNSimulator.java:355)
+	at org.apache.groovy.parser.antlr4.GroovyParser.commandExpression(GroovyParser.java:9702)
+	at org.apache.groovy.parser.antlr4.GroovyParser.statementExpression(GroovyParser.java:8233)
+	at org.apache.groovy.parser.antlr4.GroovyParser.statement(GroovyParser.java:7078)
+	at org.apache.groovy.parser.antlr4.GroovyParser.scriptStatement(GroovyParser.java:517)
+	at org.apache.groovy.parser.antlr4.GroovyParser.scriptStatements(GroovyParser.java:416)
+	at org.apache.groovy.parser.antlr4.GroovyParser.compilationUnit(GroovyParser.java:363)
+	at org.apache.groovy.parser.antlr4.AstBuilder.buildCST(AstBuilder.java:243)
+	at org.apache.groovy.parser.antlr4.AstBuilder.buildCST(AstBuilder.java:221)
+	at org.apache.groovy.parser.antlr4.AstBuilder.buildAST(AstBuilder.java:262)
+	at org.apache.groovy.parser.antlr4.Antlr4ParserPlugin.buildAST(Antlr4ParserPlugin.java:58)
+	at org.codehaus.groovy.control.SourceUnit.buildAST(SourceUnit.java:256)
+	at java.base/java.util.Iterator.forEachRemaining(Iterator.java:133)
+	at java.base/java.util.Spliterators$IteratorSpliterator.forEachRemaining(Spliterators.java:1845)
+	at java.base/java.util.stream.ReferencePipeline$Head.forEach(ReferencePipeline.java:762)
+	at org.codehaus.groovy.control.CompilationUnit.compile(CompilationUnit.java:631)
+	at groovy.lang.GroovyClassLoader.doParseClass(GroovyClassLoader.java:365)
+	at groovy.lang.GroovyClassLoader.lambda$parseClass$2(GroovyClassLoader.java:314)
+	at org.codehaus.groovy.runtime.memoize.StampedCommonCache.compute(StampedCommonCache.java:163)
+	at org.codehaus.groovy.runtime.memoize.StampedCommonCache.getAndPut(StampedCommonCache.java:154)
+	at groovy.lang.GroovyClassLoader.parseClass(GroovyClassLoader.java:314)
+	at groovy.lang.GroovyShell.parseClass(GroovyShell.java:572)
+	at groovy.lang.GroovyShell.parse(GroovyShell.java:585)
+	at groovy.lang.GroovyShell.parse(GroovyShell.java:639)
+	at groovy.lang.GroovyShell.parse(GroovyShell.java:643)
+	at nextflow.script.parser.v1.ScriptLoaderV1.parse0(ScriptLoaderV1.groovy:183)
+	... 31 common frames omitted

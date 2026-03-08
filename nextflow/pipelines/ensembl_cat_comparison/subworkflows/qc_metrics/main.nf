@@ -6,6 +6,10 @@ include { GRCH38_DIVERGENCE }     from '../../modules/grch38_divergence/main'
 include { COUNT_GFF_TRANSCRIPTS } from '../../modules/count_gff_transcripts/main'
 include { GFF_COMPARE }           from '../../modules/gff_compare/main'
 include { COUNT_CAT_GFF_TRANSCRIPTS } from '../../modules/count_cat_gff_transcripts/main'
+include { GFF_TO_GTF as ENS_GFF_TO_GTF }       from '../../modules/gff_to_gtf/main'
+include { GFF_TO_GTF as CAT_GFF_TO_GTF }       from '../../modules/gff_to_gtf/main'
+include { GFFCOMPARE_RUN }   from '../../modules/gffcompare_run/main'
+include { GFFCOMPARE_PARSE } from '../../modules/gffcompare_parse/main'
 
 workflow QC_METRICS {
     take:
@@ -38,6 +42,41 @@ workflow QC_METRICS {
     COUNT_CAT_GFF_TRANSCRIPTS(qc_inputs.cat_gff_only)
     GFF_COMPARE(qc_inputs.gff_pair)
 
+    // Convert both GFFs to GTF for gffcompare compatibility
+    ENS_GFF_TO_GTF(qc_inputs.gff_only)
+    ENS_GFF_TO_GTF.out.gtf.set { ens_gtf }
+
+    CAT_GFF_TO_GTF(qc_inputs.cat_gff_only)
+    CAT_GFF_TO_GTF.out.gtf.set { cat_gtf }
+
+    // Join Ensembl and CAT GTFs by (assembly_accession, sample_name)
+    ens_gtf
+        .map { acc, sample, gtf -> tuple([acc, sample], gtf) }
+        .set { ens_gtf_kv }
+
+    cat_gtf
+        .map { acc, sample, gtf -> tuple([acc, sample], gtf) }
+        .set { cat_gtf_kv }
+
+    ens_gtf_kv
+        .join(cat_gtf_kv)
+        .map { key, ens_path, cat_path -> tuple(key[0], key[1], ens_path, cat_path) }
+        .set { gtf_pairs }
+
+    // Create two direction jobs per pair
+    gtf_pairs
+        .flatMap { acc, sample, ens_path, cat_path ->
+            [
+                tuple(acc, sample, 'Ensembl_to_CAT', ens_path, cat_path),
+                tuple(acc, sample, 'CAT_to_Ensembl', cat_path, ens_path)
+            ]
+        }
+        .set { gffcmp_jobs }
+
+    // Run gffcompare per direction and parse class_code distributions
+    GFFCOMPARE_RUN(gffcmp_jobs)
+    GFFCOMPARE_PARSE(GFFCOMPARE_RUN.out.tmap)
+
     emit:
     transcript_concordance = TRANSCRIPT_CONCORDANCE.out.metrics
     coding_integrity = CODING_INTEGRITY.out.metrics
@@ -49,4 +88,7 @@ workflow QC_METRICS {
     gff_feature_counts = GFF_COMPARE.out.features
     gff_gene_metrics   = GFF_COMPARE.out.gene_metrics
     gff_tx_metrics     = GFF_COMPARE.out.tx_metrics
+    gffcompare_tmap         = GFFCOMPARE_RUN.out.tmap
+    gffcompare_stats        = GFFCOMPARE_RUN.out.stats
+    gffcompare_class_counts = GFFCOMPARE_PARSE.out.counts
 }

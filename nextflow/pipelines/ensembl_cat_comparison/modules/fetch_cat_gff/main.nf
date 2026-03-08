@@ -1,7 +1,8 @@
 process FETCH_CAT_GFF {
     tag "$sample_name"
     label 'process_download'
-    container 'quay.io/biocontainers/curl:8.7.1--he654da7_0'
+    // Use a base image that includes bash and curl; avoids apt-get under Singularity
+    container 'docker://rockylinux:9'
     errorStrategy { task.attempt <= 2 ? 'retry' : 'ignore' }
     maxRetries 2
     publishDir "${params.cat_cache_dir}", mode: 'copy'

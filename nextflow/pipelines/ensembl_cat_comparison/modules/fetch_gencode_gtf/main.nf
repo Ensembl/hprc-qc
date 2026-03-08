@@ -1,7 +1,8 @@
 process FETCH_GENCODE_GTF {
     tag "gencode_v${gencode_version}"
     label 'process_download'
-    container 'quay.io/biocontainers/curl:8.7.1--he654da7_0'
+    // Use a base image that includes bash and curl; avoids apt-get under Singularity
+    container 'docker://rockylinux:9'
 
     publishDir "${params.outdir}/reference", mode: 'copy'
 

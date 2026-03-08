@@ -1,7 +1,6 @@
 process GFFCOMPARE_PARSE {
     tag "${assembly_accession}_${sample_name}_${direction}"
     label 'process_low'
-    conda 'conda-forge::coreutils'
 
     publishDir "${params.outdir}/qc_metrics/${assembly_accession}", mode: 'copy'
 

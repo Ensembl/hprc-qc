@@ -2,6 +2,8 @@ process GFFCOMPARE_RUN {
     tag "${assembly_accession}_${sample_name}_${direction}"
     label 'process_low'
     conda 'bioconda::gffcompare'
+    // Containerized gffcompare; override with --gffcompare_container if needed
+    container "quay.io/biocontainers/gffcompare:0.10.6--h2d50403_0"
 
     publishDir "${params.outdir}/qc_metrics/${assembly_accession}", mode: 'copy'
 

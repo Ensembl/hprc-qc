@@ -1,7 +1,7 @@
 process GFF_COMPARE {
     tag "${assembly_accession}_${sample_name}"
     label 'process_low'
-    conda 'conda-forge::python=3.11 conda-forge::pandas'
+    conda 'conda-forge::python=3.11 conda-forge::pandas bioconda::gffcompare bioconda::gffread'
 
     publishDir "${params.outdir}/qc_metrics/${assembly_accession}", mode: 'copy'
 

@@ -17,18 +17,17 @@ process GFFCOMPARE_RUN {
     set -euo pipefail
     mkdir -p gffcompare
     # Run gffcompare with the reference and query GTFs, using direction as prefix
-    prefix="${direction}"
-    gffcompare -r ref.gtf -o "$prefix" qry.gtf || true
+    gffcompare -r ref.gtf -o "${direction}" qry.gtf || true
 
     # Normalize outputs and copy to standardized paths
-    if [ -f "${prefix}.tmap" ]; then
-        cp "${prefix}.tmap" "gffcompare/tmap_${direction}.tsv"
+    if [ -f "${direction}.tmap" ]; then
+        cp "${direction}.tmap" "gffcompare/tmap_${direction}.tsv"
     else
         : > "gffcompare/tmap_${direction}.tsv"
     fi
 
-    if [ -f "${prefix}.stats" ]; then
-        cp "${prefix}.stats" "gffcompare/stats_${direction}.txt"
+    if [ -f "${direction}.stats" ]; then
+        cp "${direction}.stats" "gffcompare/stats_${direction}.txt"
     else
         : > "gffcompare/stats_${direction}.txt"
     fi

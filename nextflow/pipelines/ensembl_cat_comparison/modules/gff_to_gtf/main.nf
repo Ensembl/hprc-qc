@@ -14,9 +14,8 @@ process GFF_TO_GTF {
     script:
     """
     mkdir -p gff_to_gtf
-    outgtf="gff_to_gtf/${assembly_accession}.${sample_name}.gtf"
     # Convert GFF3 to GTF using gffread for gffcompare compatibility
-    gffread -T -o "$outgtf" "$gff"
+    gffread -T -o "gff_to_gtf/${assembly_accession}.${sample_name}.gtf" "${gff}"
     """
 
     stub:

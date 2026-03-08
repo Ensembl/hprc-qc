@@ -1,8 +1,7 @@
 process FETCH_ENSEMBL_GFF {
     tag "$assembly_accession"
     label 'process_download'
-    conda 'conda-forge::curl'
-    container 'oras://community.wave.seqera.io/library/curl:4bd76f737af7f9c0'
+    container 'quay.io/biocontainers/curl:8.7.1--he654da7_0'
     
     errorStrategy 'retry'
     maxRetries 3

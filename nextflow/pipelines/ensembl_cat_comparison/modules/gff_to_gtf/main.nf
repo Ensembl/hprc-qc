@@ -1,9 +1,8 @@
 process GFF_TO_GTF {
     tag "${assembly_accession}_${sample_name}"
     label 'process_low'
-    conda 'bioconda::gffread'
-    // Containerized gffread; override with --gffread_container if needed
-    container "${params.gffread_container ?: 'docker://quay.io/biocontainers/gffread:0.12.7--hd03093a_1'}"
+    conda 'bioconda::gffread=0.12.7'
+    container 'quay.io/biocontainers/gffread:0.12.7--hd03093a_1'
 
     publishDir "${params.outdir}/qc_metrics/${assembly_accession}", mode: 'copy', overwrite: true
 
@@ -15,7 +14,15 @@ process GFF_TO_GTF {
 
     script:
     """
-    gff_to_gtf.sh "${gff}" "gff_to_gtf/${assembly_accession}.${sample_name}.gtf"
+    mkdir -p gff_to_gtf
+    case "${gff}" in
+      *.gz)
+        gzip -dc "${gff}" | gffread -E -F -T -o "gff_to_gtf/${assembly_accession}.${sample_name}.gtf" -
+        ;;
+      *)
+        gffread -E -F -T -o "gff_to_gtf/${assembly_accession}.${sample_name}.gtf" "${gff}"
+        ;;
+    esac
     """
 
     stub:

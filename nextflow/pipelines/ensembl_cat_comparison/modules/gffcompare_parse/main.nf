@@ -2,7 +2,7 @@ process GFFCOMPARE_PARSE {
     tag "${assembly_accession}_${sample_name}_${direction}"
     label 'process_low'
     conda 'conda-forge::python=3.11'
-    container "${params.python_container ?: 'docker://python:3.11-slim'}"
+    container 'python:3.11-slim'
 
     publishDir "${params.outdir}/qc_metrics/${assembly_accession}", mode: 'copy'
 

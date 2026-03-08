@@ -8,7 +8,7 @@ include { GFF_COMPARE }           from '../../modules/gff_compare/main'
 include { COUNT_CAT_GFF_TRANSCRIPTS } from '../../modules/count_cat_gff_transcripts/main'
 include { GFF_TO_GTF as ENS_GFF_TO_GTF }       from '../../modules/gff_to_gtf/main'
 include { GFF_TO_GTF as CAT_GFF_TO_GTF }       from '../../modules/gff_to_gtf/main'
-include { GFFCOMPARE_RUN }   from '../../modules/gffcompare_run/main'
+include { GFFCOMPARE_RUN }   from '../../modules/gffcompare_run2/main'
 include { GFFCOMPARE_PARSE } from '../../modules/gffcompare_parse/main'
 
 workflow QC_METRICS {

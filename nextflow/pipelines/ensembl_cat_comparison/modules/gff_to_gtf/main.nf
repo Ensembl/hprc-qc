@@ -1,6 +1,7 @@
 process GFF_TO_GTF {
     tag "${assembly_accession}_${sample_name}"
-    label 'process_low'
+    // GFF3 -> GTF can be memory-heavy; use medium resources
+    label 'process_medium'
     conda 'bioconda::gffread=0.12.7'
     container 'quay.io/biocontainers/gffread:0.12.7--hd03093a_1'
 
@@ -15,14 +16,14 @@ process GFF_TO_GTF {
     script:
     """
     mkdir -p gff_to_gtf
+    # Use a temporary uncompressed file to reduce peak memory vs pipe on some systems
+    IN=src.gff3
     case "${gff}" in
-      *.gz)
-        gzip -dc "${gff}" | gffread -E -F -T -o "gff_to_gtf/${assembly_accession}.${sample_name}.gtf" -
-        ;;
-      *)
-        gffread -E -F -T -o "gff_to_gtf/${assembly_accession}.${sample_name}.gtf" "${gff}"
-        ;;
+      *.gz) gzip -dc "${gff}" > "$IN" ;;
+      *)    cp -f "${gff}" "$IN" ;;
     esac
+    gffread -E -F -T -o "gff_to_gtf/${assembly_accession}.${sample_name}.gtf" "$IN"
+    rm -f "$IN"
     """
 
     stub:

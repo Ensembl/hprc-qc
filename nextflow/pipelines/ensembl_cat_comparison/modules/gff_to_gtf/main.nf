@@ -17,13 +17,9 @@ process GFF_TO_GTF {
     """
     mkdir -p gff_to_gtf
     # Use a temporary uncompressed file to reduce peak memory vs pipe on some systems
-    IN=src.gff3
-    case "${gff}" in
-      *.gz) gzip -dc "${gff}" > "$IN" ;;
-      *)    cp -f "${gff}" "$IN" ;;
-    esac
-    gffread -E -F -T -o "gff_to_gtf/${assembly_accession}.${sample_name}.gtf" "$IN"
-    rm -f "$IN"
+    gzip -dc "${gff}" > gff_to_gtf/in.gff3 || cp -f "${gff}" gff_to_gtf/in.gff3
+    gffread -E -F -T -o "gff_to_gtf/${assembly_accession}.${sample_name}.gtf" gff_to_gtf/in.gff3
+    rm -f gff_to_gtf/in.gff3
     """
 
     stub:

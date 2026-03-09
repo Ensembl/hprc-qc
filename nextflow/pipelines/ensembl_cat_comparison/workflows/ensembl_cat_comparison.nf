@@ -1,8 +1,9 @@
-include { FETCH_FILES }      from '../subworkflows/fetch_files/main'
-include { FETCH_GENCODE_GTF } from '../modules/fetch_gencode_gtf/main'
-include { RUN_COMPARISON }   from '../modules/run_comparison/main'
-include { QC_METRICS }       from '../subworkflows/qc_metrics/main'
-include { AGGREGATE }        from '../subworkflows/aggregate/main'
+include { FETCH_FILES }          from '../subworkflows/fetch_files/main'
+include { FETCH_GENCODE_GTF }   from '../modules/fetch_gencode_gtf/main'
+include { RENAME_ENSEMBL_GFF }  from '../modules/rename_ensembl_gff/main'
+include { RUN_COMPARISON }      from '../modules/run_comparison/main'
+include { QC_METRICS }          from '../subworkflows/qc_metrics/main'
+include { AGGREGATE }           from '../subworkflows/aggregate/main'
 
 workflow ENSEMBL_CAT_COMPARISON {
     take:
@@ -21,17 +22,37 @@ workflow ENSEMBL_CAT_COMPARISON {
 
     // Fetch GFF files and assembly reports
     FETCH_FILES(assemblies_ch)
+    // Rename Ensembl GFF chromosomes to match CAT (GenBank accessions)
+    // This is needed for GFFcompare, track hubs, and any tool that compares
+    // the two GFFs by chromosome name. The assembly report maps
+    // Assigned-Molecule (1, X) -> GenBank-Accn (CM089370.1, CM089395.1).
+    FETCH_FILES.out.paired
+        .map { accession, sample, ensembl_gff, cat_gff, assembly_report ->
+            tuple(accession, sample, ensembl_gff, assembly_report)
+        }
+        .set { rename_input }
+    RENAME_ENSEMBL_GFF(rename_input)
+
+    // Build channel with renamed Ensembl GFF replacing original
+    renamed_paired = RENAME_ENSEMBL_GFF.out.gff
+        .join(
+            FETCH_FILES.out.paired.map { acc, sample, ens, cat, report ->
+                tuple(acc, sample, cat)
+            },
+            by: [0, 1]
+        )
+        .map { acc, sample, renamed_ens, cat ->
+            tuple(acc, sample, renamed_ens, cat)
+        }
 
     // FETCH_FILES returns [accession, sample, ensembl_gff, cat_gff, assembly_report]
     // Pass directly to RUN_COMPARISON which expects the same tuple structure
-    RUN_COMPARISON(FETCH_FILES.out.paired)
+    // (RUN_COMPARISON handles chromosome name mapping internally via assembly report)
+    RUN_COMPARISON(renamed_paired)
 
-    // Prepare data for QC metrics
+    // Prepare data for QC metrics using renamed Ensembl GFF
     // Combine GFF files with comparison results
-    qc_input = FETCH_FILES.out.paired
-        .map { accession, sample, ensembl_gff, cat_gff, assembly_report ->
-            tuple(accession, sample, ensembl_gff, cat_gff)
-        }
+    qc_input = renamed_paired
         .join(
             RUN_COMPARISON.out.rbh.map { accession, rbh -> tuple(accession, rbh) },
             by: 0
@@ -106,6 +127,7 @@ workflow ENSEMBL_CAT_COMPARISON {
     )
 
     emit:
+    renamed_ensembl_gffs = RENAME_ENSEMBL_GFF.out.gff
     rbh = RUN_COMPARISON.out.rbh
     all_pairs = RUN_COMPARISON.out.all_pairs
     logs = RUN_COMPARISON.out.log

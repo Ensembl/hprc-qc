@@ -8,7 +8,7 @@ process RUN_COMPARISON {
     publishDir "${params.outdir}/logs", mode: 'copy', pattern: "*.log"
 
     input:
-    tuple val(assembly_accession), val(sample_name), path(ensembl_gff), path(cat_gff), path(assembly_report)
+    tuple val(assembly_accession), val(sample_name), path(ensembl_gff), path(cat_gff)
 
     output:
     tuple val(assembly_accession), path("*.gene_pairs_rbh.tsv"), emit: rbh
@@ -16,7 +16,6 @@ process RUN_COMPARISON {
     path("*.log"), emit: log
 
     script:
-    def assembly_report_arg = assembly_report ? "--assembly-report ${assembly_report}" : ""
     """
     # Create a minimal working directory structure for the script
     mkdir -p dummy_dirs/{ensembl,cat}
@@ -33,6 +32,9 @@ process RUN_COMPARISON {
     echo "${sample_name},${cat_gff.name}" >> cat_index.csv
 
     # Run the comparison script (bin/ is automatically on PATH)
+    # Chromosome normalization is 'none' because the Ensembl GFF has already
+    # been renamed upstream (RENAME_ENSEMBL_GFF) to use GenBank accessions
+    # matching the CAT GFF.
     hprc_ensembl_cat_overlap.py \\
         --ensembl-gff ${ensembl_gff} \\
         --cat-gff ${cat_gff} \\
@@ -41,8 +43,7 @@ process RUN_COMPARISON {
         --cat-index cat_index.csv \\
         --assemblies-index assemblies.csv \\
         --output-prefix ${assembly_accession} \\
-        --contig-normalization cat_hash \\
-        ${assembly_report_arg} \\
+        --contig-normalization none \\
         2>&1 | tee ${assembly_accession}.log
 
     # Check if output files were created

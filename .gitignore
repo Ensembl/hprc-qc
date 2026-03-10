@@ -1,0 +1,21 @@
+*.gff3
+*.gz
+*.png
+*.pdf
+*.txt
+*.tbi 
+*.md
+# Nextflow scratch and metadata
+work/
+.nextflow/
+# Some setups use .nextflow.* files too
+.nextflow*
+# Jupyter
+**/.ipynb_checkpoints/
+
+# Local artifacts / outputs
+nextflow/pipelines/ensembl_cat_comparison/notebooks/backups/
+nextflow/pipelines/ensembl_cat_comparison/notebooks/figures/
+nextflow/pipelines/ensembl_cat_comparison/results/
+notebooks/
+.DS_Store

@@ -42,53 +42,47 @@ workflow QC_METRICS {
     COUNT_CAT_GFF_TRANSCRIPTS(qc_inputs.cat_gff_only)
     GFF_COMPARE(qc_inputs.gff_pair)
 
-    // Convert both GFFs to GTF for gffcompare compatibility
-    ENS_GFF_TO_GTF(qc_inputs.gff_only)
-    ENS_GFF_TO_GTF.out.gtf.set { ens_gtf }
+    // Optionally run gffcompare-based transcript overlap analysis (--run_gffcompare)
+    if (params.run_gffcompare) {
+        ENS_GFF_TO_GTF(qc_inputs.gff_only)
+        CAT_GFF_TO_GTF(qc_inputs.cat_gff_only)
 
-    CAT_GFF_TO_GTF(qc_inputs.cat_gff_only)
-    CAT_GFF_TO_GTF.out.gtf.set { cat_gtf }
+        ENS_GFF_TO_GTF.out.gtf
+            .map { acc, sample, gtf -> tuple([acc, sample], gtf) }
+            .join(CAT_GFF_TO_GTF.out.gtf.map { acc, sample, gtf -> tuple([acc, sample], gtf) })
+            .map { key, ens_path, cat_path -> tuple(key[0], key[1], ens_path, cat_path) }
+            .flatMap { acc, sample, ens_path, cat_path ->
+                [
+                    tuple(acc, sample, 'Ensembl_to_CAT', ens_path, cat_path),
+                    tuple(acc, sample, 'CAT_to_Ensembl', cat_path, ens_path)
+                ]
+            }
+            .set { gffcmp_jobs }
 
-    // Join Ensembl and CAT GTFs by (assembly_accession, sample_name)
-    ens_gtf
-        .map { acc, sample, gtf -> tuple([acc, sample], gtf) }
-        .set { ens_gtf_kv }
+        GFFCOMPARE_RUN(gffcmp_jobs)
+        GFFCOMPARE_PARSE(GFFCOMPARE_RUN.out.tmap)
 
-    cat_gtf
-        .map { acc, sample, gtf -> tuple([acc, sample], gtf) }
-        .set { cat_gtf_kv }
-
-    ens_gtf_kv
-        .join(cat_gtf_kv)
-        .map { key, ens_path, cat_path -> tuple(key[0], key[1], ens_path, cat_path) }
-        .set { gtf_pairs }
-
-    // Create two direction jobs per pair
-    gtf_pairs
-        .flatMap { acc, sample, ens_path, cat_path ->
-            [
-                tuple(acc, sample, 'Ensembl_to_CAT', ens_path, cat_path),
-                tuple(acc, sample, 'CAT_to_Ensembl', cat_path, ens_path)
-            ]
-        }
-        .set { gffcmp_jobs }
-
-    // Run gffcompare per direction and parse class_code distributions
-    GFFCOMPARE_RUN(gffcmp_jobs)
-    GFFCOMPARE_PARSE(GFFCOMPARE_RUN.out.tmap)
+        gffcompare_tmap_ch         = GFFCOMPARE_RUN.out.tmap
+        gffcompare_stats_ch        = GFFCOMPARE_RUN.out.stats
+        gffcompare_class_counts_ch = GFFCOMPARE_PARSE.out.counts
+    } else {
+        gffcompare_tmap_ch         = Channel.empty()
+        gffcompare_stats_ch        = Channel.empty()
+        gffcompare_class_counts_ch = Channel.empty()
+    }
 
     emit:
-    transcript_concordance = TRANSCRIPT_CONCORDANCE.out.metrics
-    coding_integrity = CODING_INTEGRITY.out.metrics
-    gene_presence = GENE_PRESENCE.out.metrics
-    multi_mapping = MULTI_MAPPING.out.metrics
-    grch38_divergence = GRCH38_DIVERGENCE.out.metrics
-    gene_transcript_counts = COUNT_GFF_TRANSCRIPTS.out.counts
+    transcript_concordance     = TRANSCRIPT_CONCORDANCE.out.metrics
+    coding_integrity           = CODING_INTEGRITY.out.metrics
+    gene_presence              = GENE_PRESENCE.out.metrics
+    multi_mapping              = MULTI_MAPPING.out.metrics
+    grch38_divergence          = GRCH38_DIVERGENCE.out.metrics
+    gene_transcript_counts     = COUNT_GFF_TRANSCRIPTS.out.counts
     cat_gene_transcript_counts = COUNT_CAT_GFF_TRANSCRIPTS.out.cat_counts
-    gff_feature_counts = GFF_COMPARE.out.features
-    gff_gene_metrics   = GFF_COMPARE.out.gene_metrics
-    gff_tx_metrics     = GFF_COMPARE.out.tx_metrics
-    gffcompare_tmap         = GFFCOMPARE_RUN.out.tmap
-    gffcompare_stats        = GFFCOMPARE_RUN.out.stats
-    gffcompare_class_counts = GFFCOMPARE_PARSE.out.counts
+    gff_feature_counts         = GFF_COMPARE.out.features
+    gff_gene_metrics           = GFF_COMPARE.out.gene_metrics
+    gff_tx_metrics             = GFF_COMPARE.out.tx_metrics
+    gffcompare_tmap            = gffcompare_tmap_ch
+    gffcompare_stats           = gffcompare_stats_ch
+    gffcompare_class_counts    = gffcompare_class_counts_ch
 }

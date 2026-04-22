@@ -19,3 +19,4 @@ nextflow/pipelines/ensembl_cat_comparison/notebooks/figures/
 nextflow/pipelines/ensembl_cat_comparison/results/
 notebooks/
 .DS_Store
+data/

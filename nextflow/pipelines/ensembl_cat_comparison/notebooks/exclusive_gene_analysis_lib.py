@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import gzip
 import os
 import re
+import shlex
+import subprocess
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -55,6 +56,17 @@ def parse_gff_attributes(attr_string: str) -> dict[str, str]:
             key, value = item.split("=", 1)
             attrs[key] = value
     return attrs
+
+
+def _parse_gff3_gene_lines(gff_path: Path) -> list[str]:
+    """Return only gene-feature lines from a gzipped GFF3 using zcat+awk (far faster than Python gzip)."""
+    result = subprocess.run(
+        f"zcat {shlex.quote(str(gff_path))} | awk -F'\\t' 'NF==9 && $3==\"gene\"'",
+        shell=True,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.splitlines()
 
 
 def resolve_paths(
@@ -118,12 +130,26 @@ def load_gene_presence(
     if assembly_cache.exists() and exclusive_cache.exists() and not force_reload:
         return pd.read_parquet(assembly_cache), pd.read_parquet(exclusive_cache)
 
-    assembly_rows: list[dict[str, object]] = []
-    exclusive_chunks: list[pd.DataFrame] = []
+    # Per-file chunk caching: if a run crashes mid-way, the next run resumes from the last saved chunk
+    chunk_dir = paths["cache_dir"] / "presence_chunks"
+    chunk_dir.mkdir(exist_ok=True)
 
-    for path in files["gene_presence_files"]:
+    assembly_rows: list[dict[str, object]] = []
+
+    for i, path in enumerate(files["gene_presence_files"]):
+        excl_chunk = chunk_dir / f"excl_{i:05d}.parquet"
+        asm_chunk = chunk_dir / f"asm_{i:05d}.parquet"
+
+        if excl_chunk.exists() and asm_chunk.exists() and not force_reload:
+            asm_row = pd.read_parquet(asm_chunk)
+            if not asm_row.empty:
+                assembly_rows.append(asm_row.iloc[0].to_dict())
+            continue
+
         df = pd.read_csv(path, sep="\t", dtype=str)
         if df.empty:
+            pd.DataFrame().to_parquet(excl_chunk)
+            pd.DataFrame().to_parquet(asm_chunk)
             continue
 
         df["present_in_ensembl"] = df["present_in_ensembl"].eq("True")
@@ -136,24 +162,24 @@ def load_gene_presence(
         ens_only = df["present_in_ensembl"] & ~df["present_in_cat"]
         cat_only = ~df["present_in_ensembl"] & df["present_in_cat"]
 
-        assembly_rows.append(
-            {
-                "assembly_accession": df["assembly_accession"].iloc[0],
-                "sample_name": df["sample_name"].iloc[0],
-                "n_total": int(len(df)),
-                "n_both": int(both.sum()),
-                "n_ensembl_only": int(ens_only.sum()),
-                "n_cat_only": int(cat_only.sum()),
-                "n_named_total": int(df["is_named"].sum()),
-                "n_named_both": int((both & df["is_named"]).sum()),
-                "n_named_ensembl_only": int((ens_only & df["is_named"]).sum()),
-                "n_named_cat_only": int((cat_only & df["is_named"]).sum()),
-                "n_catalog_like_total": int(df["catalog_like"].sum()),
-                "n_catalog_like_both": int((both & df["catalog_like"]).sum()),
-                "n_catalog_like_ensembl_only": int((ens_only & df["catalog_like"]).sum()),
-                "n_catalog_like_cat_only": int((cat_only & df["catalog_like"]).sum()),
-            }
-        )
+        row: dict[str, object] = {
+            "assembly_accession": df["assembly_accession"].iloc[0],
+            "sample_name": df["sample_name"].iloc[0],
+            "n_total": int(len(df)),
+            "n_both": int(both.sum()),
+            "n_ensembl_only": int(ens_only.sum()),
+            "n_cat_only": int(cat_only.sum()),
+            "n_named_total": int(df["is_named"].sum()),
+            "n_named_both": int((both & df["is_named"]).sum()),
+            "n_named_ensembl_only": int((ens_only & df["is_named"]).sum()),
+            "n_named_cat_only": int((cat_only & df["is_named"]).sum()),
+            "n_catalog_like_total": int(df["catalog_like"].sum()),
+            "n_catalog_like_both": int((both & df["catalog_like"]).sum()),
+            "n_catalog_like_ensembl_only": int((ens_only & df["catalog_like"]).sum()),
+            "n_catalog_like_cat_only": int((cat_only & df["catalog_like"]).sum()),
+        }
+        pd.DataFrame([row]).to_parquet(asm_chunk, index=False)
+        assembly_rows.append(row)
 
         exclusive = df.loc[ens_only | cat_only, [
             "assembly_accession",
@@ -169,10 +195,12 @@ def load_gene_presence(
             "cat_chrom",
         ]].copy()
         exclusive["exclusive_side"] = np.where(cat_only.loc[exclusive.index], "cat_only", "ensembl_only")
-        exclusive_chunks.append(exclusive)
+        exclusive.to_parquet(excl_chunk, index=False)
 
     assembly_summary = pd.DataFrame(assembly_rows).sort_values("assembly_accession").reset_index(drop=True)
-    exclusive_obs = pd.concat(exclusive_chunks, ignore_index=True) if exclusive_chunks else pd.DataFrame()
+    excl_chunks = [pd.read_parquet(p) for p in sorted(chunk_dir.glob("excl_*.parquet"))]
+    excl_chunks = [c for c in excl_chunks if not c.empty]
+    exclusive_obs = pd.concat(excl_chunks, ignore_index=True) if excl_chunks else pd.DataFrame()
 
     assembly_summary.to_parquet(assembly_cache, index=False)
     exclusive_obs.to_parquet(exclusive_cache, index=False)
@@ -321,40 +349,56 @@ def parse_cat_only_metadata(
     cat_only = exclusive_obs[exclusive_obs["exclusive_side"].eq("cat_only")].copy()
     targets = cat_only[["sample_name", "cat_gene_id", "gene_name"]].drop_duplicates()
 
+    # Per-sample caching: saves each sample's extracted rows so a crash can resume mid-loop
+    sample_cache_dir = paths["cache_dir"] / "cat_gff_samples"
+    sample_cache_dir.mkdir(exist_ok=True)
+
     rows: list[dict[str, object]] = []
     for sample_name, target in targets.groupby("sample_name", dropna=False):
+        sample_cache = sample_cache_dir / f"{sample_name}.parquet"
+        if sample_cache.exists() and not force_reload:
+            cached = pd.read_parquet(sample_cache)
+            if not cached.empty:
+                rows.extend(cached.to_dict("records"))
+            continue
+
         gff_path = paths["cat_cache_dir"] / f"{sample_name}_cat.gff3.gz"
         if not gff_path.exists():
+            pd.DataFrame().to_parquet(sample_cache)
             continue
 
         wanted_gene_ids = set(target["cat_gene_id"].dropna().astype(str))
         wanted_gene_names = set(target["gene_name"].dropna().astype(str))
 
-        with gzip.open(gff_path, "rt") as handle:
-            for line in handle:
-                if line.startswith("#"):
-                    continue
-                parts = line.rstrip("\n").split("\t")
-                if len(parts) < 9 or parts[2] != "gene":
-                    continue
+        # _parse_gff3_gene_lines uses zcat+awk to return only gene-feature lines,
+        # which is orders of magnitude faster than Python-level gzip iteration
+        sample_rows: list[dict[str, object]] = []
+        for line in _parse_gff3_gene_lines(gff_path):
+            parts = line.split("\t")
+            if len(parts) < 9:
+                continue
 
-                attrs = parse_gff_attributes(parts[8])
-                gene_id = attrs.get("ID", attrs.get("gene_id", ""))
-                gene_name = attrs.get("gene_name", attrs.get("Name", attrs.get("gene", gene_id)))
+            attrs = parse_gff_attributes(parts[8])
+            gene_id = attrs.get("ID", attrs.get("gene_id", ""))
+            gene_name = attrs.get("gene_name", attrs.get("Name", attrs.get("gene", gene_id)))
 
-                if gene_id not in wanted_gene_ids and gene_name not in wanted_gene_names:
-                    continue
+            if gene_id not in wanted_gene_ids and gene_name not in wanted_gene_names:
+                continue
 
-                rows.append(
-                    {
-                        "sample_name": sample_name,
-                        "cat_gene_id": gene_id,
-                        "gene_name": gene_name,
-                        "cat_source": parts[1],
-                        "cat_source_biotype": attrs.get("gene_biotype", attrs.get("biotype", "unknown")),
-                        "cat_source_chrom": parts[0],
-                    }
-                )
+            sample_rows.append(
+                {
+                    "sample_name": sample_name,
+                    "cat_gene_id": gene_id,
+                    "gene_name": gene_name,
+                    "cat_source": parts[1],
+                    "cat_source_biotype": attrs.get("gene_biotype", attrs.get("biotype", "unknown")),
+                    "cat_source_chrom": parts[0],
+                }
+            )
+
+        sample_df = pd.DataFrame(sample_rows) if sample_rows else pd.DataFrame()
+        sample_df.to_parquet(sample_cache)
+        rows.extend(sample_rows)
 
     cat_meta = pd.DataFrame(rows).drop_duplicates(["sample_name", "cat_gene_id", "gene_name"])
 

@@ -96,6 +96,8 @@ def resolve_paths(
     return {
         "output_dir": output_dir,
         "qc_dir": output_dir / "qc_metrics",
+        # gene_pairs_all files are published under results/, not qc_metrics/
+        "results_dir": output_dir / "results",
         "intermediate_dir": intermediate_dir,
         "analysis_dir": analysis_dir,
         "cache_dir": cache_dir,
@@ -107,6 +109,7 @@ def resolve_paths(
 
 def discover_files(paths: dict[str, Path]) -> dict[str, list[Path]]:
     qc_dir = paths["qc_dir"]
+    results_dir = paths["results_dir"]
     gene_presence_files = sorted(qc_dir.glob("*/*_gene_presence.tsv"))
     ensembl_gene_count_files = sorted(
         path
@@ -114,10 +117,16 @@ def discover_files(paths: dict[str, Path]) -> dict[str, list[Path]]:
         if not path.name.endswith("_cat_gene_transcript_counts.tsv")
     )
     cat_gene_count_files = sorted(qc_dir.glob("*/*_cat_gene_transcript_counts.tsv"))
+    # gene_pairs_all: published to results/{accession}/{accession}.gene_pairs_all.tsv
+    gene_pairs_all_files = sorted(results_dir.glob("*/*.gene_pairs_all.tsv"))
+    # multi_mapping: published to qc_metrics/{accession}/{accession}_multi_mapping.tsv
+    multi_mapping_files = sorted(qc_dir.glob("*/*_multi_mapping.tsv"))
     return {
         "gene_presence_files": gene_presence_files,
         "ensembl_gene_count_files": ensembl_gene_count_files,
         "cat_gene_count_files": cat_gene_count_files,
+        "gene_pairs_all_files": gene_pairs_all_files,
+        "multi_mapping_files": multi_mapping_files,
     }
 
 
@@ -325,6 +334,359 @@ def build_exclusive_rollups(
     name_summary.to_csv(paths["analysis_dir"] / "exclusive_name_class_summary.tsv", sep="\t", index=False)
     biotype_summary.to_csv(paths["analysis_dir"] / "exclusive_biotype_summary.tsv", sep="\t", index=False)
     return rollup, name_summary, biotype_summary
+
+
+_KEEP_PAIRS_COLS = [
+    "assembly_accession",
+    "ensembl_gene_id",
+    "cat_gene_id",
+    "ensembl_name",
+    "cat_name",
+    "ensembl_biotype",
+    "cat_biotype",
+    "frac_ensembl_covered",
+    "frac_cat_covered",
+    "is_rbh",
+    "is_spatial",
+]
+
+
+def _normalise_pairs_columns(df: pd.DataFrame, assembly_accession: str) -> pd.DataFrame:
+    """Normalise gene_pairs_all column names and add assembly_accession if missing.
+
+    The overlap script uses 'ensembl_id'/'cat_id' in its compute path but
+    'ensembl_gene_id'/'cat_gene_id' in the empty-file fallback.  Both produce
+    identical string values; we standardise to ensembl_gene_id/cat_gene_id to
+    match the rest of the QC system.
+    """
+    renames: dict[str, str] = {}
+    if "ensembl_id" in df.columns and "ensembl_gene_id" not in df.columns:
+        renames["ensembl_id"] = "ensembl_gene_id"
+    if "cat_id" in df.columns and "cat_gene_id" not in df.columns:
+        renames["cat_id"] = "cat_gene_id"
+    if renames:
+        df = df.rename(columns=renames)
+    if "assembly_accession" not in df.columns:
+        df = df.assign(assembly_accession=assembly_accession)
+    # is_spatial may be absent in name-match-only output versions
+    if "is_spatial" not in df.columns:
+        df = df.assign(is_spatial=True)
+    # Retain only the columns we need (ignore extra columns silently)
+    present = [c for c in _KEEP_PAIRS_COLS if c in df.columns]
+    return df[present].copy()
+
+
+def load_gene_pairs_all(
+    paths: dict[str, Path], files: dict[str, list[Path]], force_reload: bool = False
+) -> pd.DataFrame:
+    """Load all-overlapping-pairs (RBH + non-RBH) across every assembly.
+
+    Files live at results/{accession}/{accession}.gene_pairs_all.tsv.
+    Results are cached per-file so a crash can resume from the last saved chunk.
+    Returns a single DataFrame with one row per (assembly × overlapping gene pair).
+    """
+    cache_path = paths["cache_dir"] / "gene_pairs_all.parquet"
+    if cache_path.exists() and not force_reload:
+        return pd.read_parquet(cache_path)
+
+    chunk_dir = paths["cache_dir"] / "pairs_all_chunks"
+    chunk_dir.mkdir(exist_ok=True)
+
+    chunks: list[pd.DataFrame] = []
+    for i, path in enumerate(files["gene_pairs_all_files"]):
+        chunk_path = chunk_dir / f"chunk_{i:05d}.parquet"
+        # Extract accession from filename: {accession}.gene_pairs_all.tsv
+        accession = path.name.replace(".gene_pairs_all.tsv", "")
+
+        if chunk_path.exists() and not force_reload:
+            chunk = pd.read_parquet(chunk_path)
+            if not chunk.empty:
+                chunks.append(chunk)
+            continue
+
+        try:
+            df = pd.read_csv(path, sep="\t", dtype=str, low_memory=False)
+        except Exception:
+            pd.DataFrame().to_parquet(chunk_path)
+            continue
+
+        if df.empty:
+            pd.DataFrame().to_parquet(chunk_path)
+            continue
+
+        df = _normalise_pairs_columns(df, accession)
+
+        # Cast numeric columns
+        for col in ("frac_ensembl_covered", "frac_cat_covered"):
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+        for col in ("is_rbh", "is_spatial"):
+            if col in df.columns:
+                df[col] = df[col].map({"True": True, "False": False}).fillna(False)
+
+        df.to_parquet(chunk_path, index=False)
+        chunks.append(df)
+
+    result = pd.concat(chunks, ignore_index=True) if chunks else pd.DataFrame(columns=_KEEP_PAIRS_COLS)
+    result.to_parquet(cache_path, index=False)
+    return result
+
+
+def load_multi_mapping(
+    paths: dict[str, Path], files: dict[str, list[Path]], force_reload: bool = False
+) -> pd.DataFrame:
+    """Load per-assembly multi-mapping analysis into a single cohort DataFrame.
+
+    Files live at qc_metrics/{accession}/{accession}_multi_mapping.tsv.
+    Columns: assembly_accession, sample_name, gene_id, source, n_matches,
+             relationship, classification, matched_gene_ids, matched_biotypes,
+             overlap_fractions, total_coverage_fraction, has_rbh_match.
+    """
+    cache_path = paths["cache_dir"] / "multi_mapping.parquet"
+    if cache_path.exists() and not force_reload:
+        return pd.read_parquet(cache_path)
+
+    chunk_dir = paths["cache_dir"] / "multi_mapping_chunks"
+    chunk_dir.mkdir(exist_ok=True)
+
+    chunks: list[pd.DataFrame] = []
+    for i, path in enumerate(files["multi_mapping_files"]):
+        chunk_path = chunk_dir / f"chunk_{i:05d}.parquet"
+
+        if chunk_path.exists() and not force_reload:
+            chunk = pd.read_parquet(chunk_path)
+            if not chunk.empty:
+                chunks.append(chunk)
+            continue
+
+        try:
+            df = pd.read_csv(path, sep="\t", dtype=str, low_memory=False)
+        except Exception:
+            pd.DataFrame().to_parquet(chunk_path)
+            continue
+
+        if df.empty:
+            pd.DataFrame().to_parquet(chunk_path)
+            continue
+
+        for col in ("n_matches", "total_coverage_fraction"):
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+        if "has_rbh_match" in df.columns:
+            df["has_rbh_match"] = df["has_rbh_match"].map({"True": True, "False": False}).fillna(False)
+
+        df.to_parquet(chunk_path, index=False)
+        chunks.append(df)
+
+    _MM_COLS = [
+        "assembly_accession", "sample_name", "gene_id", "source", "n_matches",
+        "relationship", "classification", "matched_gene_ids", "matched_biotypes",
+        "overlap_fractions", "total_coverage_fraction", "has_rbh_match",
+    ]
+    result = pd.concat(chunks, ignore_index=True) if chunks else pd.DataFrame(columns=_MM_COLS)
+    result.to_parquet(cache_path, index=False)
+    return result
+
+
+def lookup_ensembl_grch38_locations(gene_names: list[str]) -> pd.DataFrame:
+    """Query the Ensembl REST API for GRCh38 genomic locations of gene symbols.
+
+    Returns a DataFrame with columns:
+        gene_name, grch38_seq_region, grch38_start, grch38_end, grch38_strand,
+        grch38_assembly_name, is_primary_assembly.
+
+    seq_region will be a chromosome number ('2', 'X') for primary-assembly genes
+    or an alt-locus/patch name (e.g. 'CHR_HSCHR2_1_CTG1') for non-primary loci.
+    is_primary_assembly is True when seq_region is a bare chromosome number.
+    """
+    import json
+    import urllib.request
+
+    rows: list[dict[str, object]] = []
+    batch_size = 200  # Ensembl REST API limit per POST
+    for batch_start in range(0, len(gene_names), batch_size):
+        batch = gene_names[batch_start : batch_start + batch_size]
+        url = "https://rest.ensembl.org/lookup/symbol/homo_sapiens"
+        body = json.dumps({"symbols": batch}).encode()
+        req = urllib.request.Request(
+            url,
+            data=body,
+            headers={"Content-Type": "application/json", "Accept": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                data: dict = json.loads(resp.read())
+        except Exception as exc:
+            print(f"Warning: Ensembl REST lookup failed for batch starting {batch_start}: {exc}")
+            continue
+
+        for name, info in data.items():
+            if not isinstance(info, dict):
+                rows.append({"gene_name": name, "grch38_seq_region": None})
+                continue
+            seq_region = info.get("seq_region_name", "")
+            rows.append(
+                {
+                    "gene_name": name,
+                    "grch38_seq_region": seq_region,
+                    "grch38_start": info.get("start"),
+                    "grch38_end": info.get("end"),
+                    "grch38_strand": info.get("strand"),
+                    "grch38_assembly_name": info.get("assembly_name", ""),
+                    # Primary assembly chromosomes are bare digits or single letters
+                    "is_primary_assembly": bool(
+                        seq_region and re.match(r"^(\d{1,2}|X|Y|MT)$", str(seq_region))
+                    ),
+                }
+            )
+
+    return pd.DataFrame(rows)
+
+
+def run_followup_investigations(
+    results: dict[str, object],
+    force_reload: bool = False,
+) -> dict[str, object]:
+    """Cross-reference exclusive genes against gene_pairs_all and multi_mapping data.
+
+    Requires the HPC result files (gene_pairs_all, multi_mapping) to be present.
+    If files are missing the corresponding DataFrames will be empty and each
+    investigation section will be an empty DataFrame rather than raising.
+
+    Returns a dict with keys:
+        pairs_all           – full gene_pairs_all DataFrame (all assemblies)
+        multi_mapping       – full multi_mapping DataFrame (all assemblies)
+        readthrough_in_pairs – readthrough CAT gene IDs found in gene_pairs_all
+        readthrough_multi    – multi_mapping rows for readthrough CAT gene IDs
+        ulc_in_pairs         – unknown_likely_coding CAT IDs found in gene_pairs_all
+        ens_only_grch38      – GRCh38 location lookup for top Ensembl-only exclusives
+        residual_cat_only    – catalog-like CAT-only exclusives not in gene_pairs_all
+        residual_ens_only    – catalog-like Ensembl-only exclusives not in gene_pairs_all
+    """
+    paths: dict[str, Path] = results["paths"]
+    files: dict[str, list[Path]] = results["files"]
+    cat_only: pd.DataFrame = results["cat_only_enriched"]
+    exclusive_obs: pd.DataFrame = results["exclusive_obs"]
+
+    pairs_all = load_gene_pairs_all(paths, files, force_reload=force_reload)
+    mm = load_multi_mapping(paths, files, force_reload=force_reload)
+
+    # ── 1. Readthrough investigation ─────────────────────────────────────────
+    # Readthroughs: CAT-only, hyphenated gene names, source=CAT (not Liftoff)
+    readthrough_ids = set(
+        cat_only.loc[
+            cat_only["name_class"].eq("hyphenated_symbol")
+            & cat_only["cat_source"].eq("CAT"),
+            "cat_gene_id",
+        ]
+        .dropna()
+        .astype(str)
+    )
+
+    if not pairs_all.empty and "cat_gene_id" in pairs_all.columns:
+        rt_in_pairs = pairs_all[pairs_all["cat_gene_id"].isin(readthrough_ids)].copy()
+    else:
+        rt_in_pairs = pd.DataFrame()
+
+    if not mm.empty and "gene_id" in mm.columns:
+        rt_multi = mm[
+            mm["gene_id"].isin(readthrough_ids) & mm["source"].eq("cat")
+        ].copy()
+    else:
+        rt_multi = pd.DataFrame()
+
+    # ── 2. unknown_likely_coding investigation ───────────────────────────────
+    ulc_ids = set(
+        cat_only.loc[
+            cat_only["cat_biotype"].eq("unknown_likely_coding"),
+            "cat_gene_id",
+        ]
+        .dropna()
+        .astype(str)
+    )
+
+    if not pairs_all.empty and "cat_gene_id" in pairs_all.columns:
+        ulc_in_pairs = pairs_all[pairs_all["cat_gene_id"].isin(ulc_ids)].copy()
+    else:
+        ulc_in_pairs = pd.DataFrame()
+
+    # ── 3. Ensembl-only exclusive gene GRCh38 lookup ─────────────────────────
+    # Take consistently Ensembl-only catalog-like genes (present in many assemblies)
+    ens_only_catalog = exclusive_obs[
+        exclusive_obs["exclusive_side"].eq("ensembl_only") & exclusive_obs["catalog_like"]
+    ]
+    # Summarise to per-gene counts to find the most recurrent
+    ens_only_counts = (
+        ens_only_catalog.groupby("gene_name", dropna=False)
+        .agg(n_assemblies=("assembly_accession", "nunique"), ensembl_chrom=("ensembl_chrom", first_nonempty))
+        .reset_index()
+        .sort_values("n_assemblies", ascending=False)
+    )
+    # Look up GRCh38 locations for the top 100 most recurrent
+    top_ens_only = ens_only_counts.head(100)["gene_name"].tolist()
+    ens_only_grch38: pd.DataFrame
+    if top_ens_only:
+        grch38_locs = lookup_ensembl_grch38_locations(top_ens_only)
+        ens_only_grch38 = ens_only_counts.merge(grch38_locs, on="gene_name", how="left")
+    else:
+        ens_only_grch38 = ens_only_counts.copy()
+
+    # ── 4. Residual catalog-like exclusives ──────────────────────────────────
+    # Catalog-like exclusives that are NOT readthroughs and NOT unknown_likely_coding
+    cat_only_catalog = exclusive_obs[
+        exclusive_obs["exclusive_side"].eq("cat_only") & exclusive_obs["catalog_like"]
+    ]
+    residual_cat = cat_only_catalog[~cat_only_catalog["cat_gene_id"].isin(readthrough_ids | ulc_ids)]
+
+    ens_only_all = exclusive_obs[
+        exclusive_obs["exclusive_side"].eq("ensembl_only") & exclusive_obs["catalog_like"]
+    ]
+
+    def _classify_against_pairs(
+        obs: pd.DataFrame, id_col: str, pairs: pd.DataFrame, pairs_id_col: str
+    ) -> pd.DataFrame:
+        """Label each exclusive gene as 'in_pairs_all', 'rbh_only', or 'absent'."""
+        if obs.empty:
+            return obs.assign(pairs_status="absent")
+        if pairs.empty or pairs_id_col not in pairs.columns:
+            return obs.assign(pairs_status="pairs_data_unavailable")
+        ids_in_pairs = set(pairs[pairs_id_col].dropna().astype(str))
+        ids_rbh_only = set(
+            pairs.loc[pairs["is_rbh"].eq(True), pairs_id_col].dropna().astype(str)
+        )
+        ids_non_rbh = set(
+            pairs.loc[~pairs["is_rbh"].eq(True), pairs_id_col].dropna().astype(str)
+        )
+
+        def classify(gid: object) -> str:
+            gid = str(gid) if pd.notna(gid) else ""
+            if gid in ids_non_rbh:
+                return "in_pairs_all_non_rbh"   # has spatial overlap but not RBH
+            if gid in ids_rbh_only:
+                return "rbh_only"               # only found via name match in all-pairs
+            if gid in ids_in_pairs:
+                return "in_pairs_all"
+            return "absent"
+
+        return obs.assign(pairs_status=obs[id_col].map(classify))
+
+    residual_cat_classified = _classify_against_pairs(
+        residual_cat, "cat_gene_id", pairs_all, "cat_gene_id"
+    )
+    residual_ens_classified = _classify_against_pairs(
+        ens_only_all, "ensembl_gene_id", pairs_all, "ensembl_gene_id"
+    )
+
+    return {
+        "pairs_all": pairs_all,
+        "multi_mapping": mm,
+        "readthrough_in_pairs": rt_in_pairs,
+        "readthrough_multi": rt_multi,
+        "ulc_in_pairs": ulc_in_pairs,
+        "ens_only_grch38": ens_only_grch38,
+        "residual_cat_only": residual_cat_classified,
+        "residual_ens_only": residual_ens_classified,
+    }
 
 
 def parse_cat_only_metadata(

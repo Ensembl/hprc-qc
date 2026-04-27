@@ -376,47 +376,52 @@ def _normalise_pairs_columns(df: pd.DataFrame, assembly_accession: str) -> pd.Da
     return df[present].copy()
 
 
-def load_gene_pairs_all(
-    paths: dict[str, Path], files: dict[str, list[Path]], force_reload: bool = False
+def _stream_gene_pairs_all(
+    paths: dict[str, Path],
+    files: dict[str, list[Path]],
+    target_cat_ids: set | None = None,
+    target_ens_ids: set | None = None,
+    cache_name: str = "pairs_query",
+    force_reload: bool = False,
 ) -> pd.DataFrame:
-    """Load all-overlapping-pairs (RBH + non-RBH) across every assembly.
+    """Stream gene_pairs_all files one at a time, keeping only rows matching target IDs.
 
-    Files live at results/{accession}/{accession}.gene_pairs_all.tsv.
-    Results are cached per-file so a crash can resume from the last saved chunk.
-    Returns a single DataFrame with one row per (assembly × overlapping gene pair).
+    Unlike a full load, this never materialises the entire dataset in memory.
+    Rows are kept when cat_gene_id is in target_cat_ids OR ensembl_gene_id is in
+    target_ens_ids.  If neither set is supplied all rows are kept (avoid on large
+    cohorts — tens of millions of rows across 462 assemblies).
+
+    Results are cached to ``{cache_name}.parquet`` so a second call with the same
+    ``cache_name`` and ``force_reload=False`` returns instantly.
     """
-    cache_path = paths["cache_dir"] / "gene_pairs_all.parquet"
+    cache_path = paths["cache_dir"] / f"{cache_name}.parquet"
     if cache_path.exists() and not force_reload:
         return pd.read_parquet(cache_path)
 
-    chunk_dir = paths["cache_dir"] / "pairs_all_chunks"
-    chunk_dir.mkdir(exist_ok=True)
-
     chunks: list[pd.DataFrame] = []
-    for i, path in enumerate(files["gene_pairs_all_files"]):
-        chunk_path = chunk_dir / f"chunk_{i:05d}.parquet"
-        # Extract accession from filename: {accession}.gene_pairs_all.tsv
+    for path in files.get("gene_pairs_all_files", []):
         accession = path.name.replace(".gene_pairs_all.tsv", "")
-
-        if chunk_path.exists() and not force_reload:
-            chunk = pd.read_parquet(chunk_path)
-            if not chunk.empty:
-                chunks.append(chunk)
-            continue
-
         try:
             df = pd.read_csv(path, sep="\t", dtype=str, low_memory=False)
         except Exception:
-            pd.DataFrame().to_parquet(chunk_path)
             continue
-
         if df.empty:
-            pd.DataFrame().to_parquet(chunk_path)
             continue
 
         df = _normalise_pairs_columns(df, accession)
 
-        # Cast numeric columns
+        # Filter to target IDs
+        if target_cat_ids is not None or target_ens_ids is not None:
+            mask = pd.Series(False, index=df.index)
+            if target_cat_ids is not None and "cat_gene_id" in df.columns:
+                mask |= df["cat_gene_id"].isin(target_cat_ids)
+            if target_ens_ids is not None and "ensembl_gene_id" in df.columns:
+                mask |= df["ensembl_gene_id"].isin(target_ens_ids)
+            df = df[mask]
+
+        if df.empty:
+            continue
+
         for col in ("frac_ensembl_covered", "frac_cat_covered"):
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors="coerce")
@@ -424,7 +429,6 @@ def load_gene_pairs_all(
             if col in df.columns:
                 df[col] = df[col].map({"True": True, "False": False}).fillna(False)
 
-        df.to_parquet(chunk_path, index=False)
         chunks.append(df)
 
     result = pd.concat(chunks, ignore_index=True) if chunks else pd.DataFrame(columns=_KEEP_PAIRS_COLS)
@@ -432,41 +436,41 @@ def load_gene_pairs_all(
     return result
 
 
-def load_multi_mapping(
-    paths: dict[str, Path], files: dict[str, list[Path]], force_reload: bool = False
-) -> pd.DataFrame:
-    """Load per-assembly multi-mapping analysis into a single cohort DataFrame.
+_MM_COLS = [
+    "assembly_accession", "sample_name", "gene_id", "source", "n_matches",
+    "relationship", "classification", "matched_gene_ids", "matched_biotypes",
+    "overlap_fractions", "total_coverage_fraction", "has_rbh_match",
+]
 
-    Files live at qc_metrics/{accession}/{accession}_multi_mapping.tsv.
-    Columns: assembly_accession, sample_name, gene_id, source, n_matches,
-             relationship, classification, matched_gene_ids, matched_biotypes,
-             overlap_fractions, total_coverage_fraction, has_rbh_match.
+
+def _stream_multi_mapping(
+    paths: dict[str, Path],
+    files: dict[str, list[Path]],
+    target_gene_ids: set | None = None,
+    cache_name: str = "mm_query",
+    force_reload: bool = False,
+) -> pd.DataFrame:
+    """Stream multi_mapping files one at a time, keeping only rows matching target gene_ids.
+
+    If target_gene_ids is None all rows are kept (avoid on large cohorts).
+    Results are cached to ``{cache_name}.parquet``.
     """
-    cache_path = paths["cache_dir"] / "multi_mapping.parquet"
+    cache_path = paths["cache_dir"] / f"{cache_name}.parquet"
     if cache_path.exists() and not force_reload:
         return pd.read_parquet(cache_path)
 
-    chunk_dir = paths["cache_dir"] / "multi_mapping_chunks"
-    chunk_dir.mkdir(exist_ok=True)
-
     chunks: list[pd.DataFrame] = []
-    for i, path in enumerate(files["multi_mapping_files"]):
-        chunk_path = chunk_dir / f"chunk_{i:05d}.parquet"
-
-        if chunk_path.exists() and not force_reload:
-            chunk = pd.read_parquet(chunk_path)
-            if not chunk.empty:
-                chunks.append(chunk)
-            continue
-
+    for path in files.get("multi_mapping_files", []):
         try:
             df = pd.read_csv(path, sep="\t", dtype=str, low_memory=False)
         except Exception:
-            pd.DataFrame().to_parquet(chunk_path)
+            continue
+        if df.empty:
             continue
 
+        if target_gene_ids is not None and "gene_id" in df.columns:
+            df = df[df["gene_id"].isin(target_gene_ids)]
         if df.empty:
-            pd.DataFrame().to_parquet(chunk_path)
             continue
 
         for col in ("n_matches", "total_coverage_fraction"):
@@ -475,14 +479,8 @@ def load_multi_mapping(
         if "has_rbh_match" in df.columns:
             df["has_rbh_match"] = df["has_rbh_match"].map({"True": True, "False": False}).fillna(False)
 
-        df.to_parquet(chunk_path, index=False)
         chunks.append(df)
 
-    _MM_COLS = [
-        "assembly_accession", "sample_name", "gene_id", "source", "n_matches",
-        "relationship", "classification", "matched_gene_ids", "matched_biotypes",
-        "overlap_fractions", "total_coverage_fraction", "has_rbh_match",
-    ]
     result = pd.concat(chunks, ignore_index=True) if chunks else pd.DataFrame(columns=_MM_COLS)
     result.to_parquet(cache_path, index=False)
     return result
@@ -549,54 +547,42 @@ def run_followup_investigations(
 ) -> dict[str, object]:
     """Cross-reference exclusive genes against gene_pairs_all and multi_mapping data.
 
-    Requires the HPC result files (gene_pairs_all, multi_mapping) to be present.
-    If files are missing the corresponding DataFrames will be empty and each
-    investigation section will be an empty DataFrame rather than raising.
+    Streams gene_pairs_all and multi_mapping one file at a time, keeping only rows
+    relevant to the four investigations.  This avoids loading the full multi-GB
+    dataset into memory — the target ID sets are computed from already-loaded
+    DataFrames before any file I/O begins, then a single filtered pass is made
+    through each file collection.
+
+    Cached query results are written to the cache directory so a second call with
+    the same ``force_reload=False`` returns immediately.
 
     Returns a dict with keys:
-        pairs_all           – full gene_pairs_all DataFrame (all assemblies)
-        multi_mapping       – full multi_mapping DataFrame (all assemblies)
-        readthrough_in_pairs – readthrough CAT gene IDs found in gene_pairs_all
+        readthrough_in_pairs – pairs_all subset for readthrough CAT gene IDs
         readthrough_multi    – multi_mapping rows for readthrough CAT gene IDs
-        ulc_in_pairs         – unknown_likely_coding CAT IDs found in gene_pairs_all
+        ulc_in_pairs         – pairs_all subset for unknown_likely_coding CAT IDs
         ens_only_grch38      – GRCh38 location lookup for top Ensembl-only exclusives
-        residual_cat_only    – catalog-like CAT-only exclusives not in gene_pairs_all
-        residual_ens_only    – catalog-like Ensembl-only exclusives not in gene_pairs_all
+        residual_cat_only    – catalog-like CAT-only exclusives classified by pairs status
+        residual_ens_only    – catalog-like Ensembl-only exclusives classified by pairs status
     """
     paths: dict[str, Path] = results["paths"]
     files: dict[str, list[Path]] = results["files"]
     cat_only: pd.DataFrame = results["cat_only_enriched"]
     exclusive_obs: pd.DataFrame = results["exclusive_obs"]
 
-    pairs_all = load_gene_pairs_all(paths, files, force_reload=force_reload)
-    mm = load_multi_mapping(paths, files, force_reload=force_reload)
+    # ── Compute target ID sets from already-loaded DataFrames (no file I/O) ──
 
-    # ── 1. Readthrough investigation ─────────────────────────────────────────
-    # Readthroughs: CAT-only, hyphenated gene names, source=CAT (not Liftoff)
-    readthrough_ids = set(
+    # 1. Readthrough: hyphenated CAT-source genes
+    readthrough_ids: set[str] = set(
         cat_only.loc[
-            cat_only["name_class"].eq("hyphenated_symbol")
-            & cat_only["cat_source"].eq("CAT"),
+            cat_only["name_class"].eq("hyphenated_symbol") & cat_only["cat_source"].eq("CAT"),
             "cat_gene_id",
         ]
         .dropna()
         .astype(str)
     )
 
-    if not pairs_all.empty and "cat_gene_id" in pairs_all.columns:
-        rt_in_pairs = pairs_all[pairs_all["cat_gene_id"].isin(readthrough_ids)].copy()
-    else:
-        rt_in_pairs = pd.DataFrame()
-
-    if not mm.empty and "gene_id" in mm.columns:
-        rt_multi = mm[
-            mm["gene_id"].isin(readthrough_ids) & mm["source"].eq("cat")
-        ].copy()
-    else:
-        rt_multi = pd.DataFrame()
-
-    # ── 2. unknown_likely_coding investigation ───────────────────────────────
-    ulc_ids = set(
+    # 2. unknown_likely_coding
+    ulc_ids: set[str] = set(
         cat_only.loc[
             cat_only["cat_biotype"].eq("unknown_likely_coding"),
             "cat_gene_id",
@@ -605,81 +591,129 @@ def run_followup_investigations(
         .astype(str)
     )
 
-    if not pairs_all.empty and "cat_gene_id" in pairs_all.columns:
-        ulc_in_pairs = pairs_all[pairs_all["cat_gene_id"].isin(ulc_ids)].copy()
+    # 3. Ensembl-only catalog-like observations
+    ens_only_catalog_obs = exclusive_obs[
+        exclusive_obs["exclusive_side"].eq("ensembl_only") & exclusive_obs["catalog_like"]
+    ]
+    ens_only_catalog_ids: set[str] = set(
+        ens_only_catalog_obs["ensembl_gene_id"].dropna().astype(str)
+    ) if "ensembl_gene_id" in ens_only_catalog_obs.columns else set()
+
+    # 4. Residual catalog-like CAT-only obs (not readthrough, not ULC)
+    cat_only_catalog_obs = exclusive_obs[
+        exclusive_obs["exclusive_side"].eq("cat_only") & exclusive_obs["catalog_like"]
+    ]
+    cat_only_catalog_ids: set[str] = (
+        set(cat_only_catalog_obs["cat_gene_id"].dropna().astype(str))
+        if "cat_gene_id" in cat_only_catalog_obs.columns
+        else set()
+    ) - readthrough_ids - ulc_ids
+
+    # ── ONE streaming pass through gene_pairs_all ─────────────────────────────
+    # Union of all CAT IDs we need across investigations 1, 2, and 4
+    all_target_cat = readthrough_ids | ulc_ids | cat_only_catalog_ids
+    pairs_subset = _stream_gene_pairs_all(
+        paths, files,
+        target_cat_ids=all_target_cat if all_target_cat else None,
+        target_ens_ids=ens_only_catalog_ids if ens_only_catalog_ids else None,
+        cache_name="followup_pairs_subset",
+        force_reload=force_reload,
+    )
+
+    # ── ONE streaming pass through multi_mapping (readthrough IDs only) ───────
+    mm_readthrough = _stream_multi_mapping(
+        paths, files,
+        target_gene_ids=readthrough_ids if readthrough_ids else None,
+        cache_name="followup_mm_readthrough",
+        force_reload=force_reload,
+    )
+
+    # ── Split pairs_subset per investigation ──────────────────────────────────
+
+    # Investigation 1 — readthrough
+    if not pairs_subset.empty and "cat_gene_id" in pairs_subset.columns:
+        rt_in_pairs = pairs_subset[pairs_subset["cat_gene_id"].isin(readthrough_ids)].copy()
+    else:
+        rt_in_pairs = pd.DataFrame()
+
+    rt_multi = (
+        mm_readthrough[mm_readthrough["source"].eq("cat")].copy()
+        if not mm_readthrough.empty and "source" in mm_readthrough.columns
+        else pd.DataFrame()
+    )
+
+    # Investigation 2 — unknown_likely_coding
+    if not pairs_subset.empty and "cat_gene_id" in pairs_subset.columns:
+        ulc_in_pairs = pairs_subset[pairs_subset["cat_gene_id"].isin(ulc_ids)].copy()
     else:
         ulc_in_pairs = pd.DataFrame()
 
     # ── 3. Ensembl-only exclusive gene GRCh38 lookup ─────────────────────────
-    # Take consistently Ensembl-only catalog-like genes (present in many assemblies)
-    ens_only_catalog = exclusive_obs[
-        exclusive_obs["exclusive_side"].eq("ensembl_only") & exclusive_obs["catalog_like"]
-    ]
-    # Summarise to per-gene counts to find the most recurrent
     ens_only_counts = (
-        ens_only_catalog.groupby("gene_name", dropna=False)
+        ens_only_catalog_obs.groupby("gene_name", dropna=False)
         .agg(n_assemblies=("assembly_accession", "nunique"), ensembl_chrom=("ensembl_chrom", first_nonempty))
         .reset_index()
         .sort_values("n_assemblies", ascending=False)
     )
-    # Look up GRCh38 locations for the top 100 most recurrent
     top_ens_only = ens_only_counts.head(100)["gene_name"].tolist()
-    ens_only_grch38: pd.DataFrame
     if top_ens_only:
         grch38_locs = lookup_ensembl_grch38_locations(top_ens_only)
         ens_only_grch38 = ens_only_counts.merge(grch38_locs, on="gene_name", how="left")
     else:
         ens_only_grch38 = ens_only_counts.copy()
 
-    # ── 4. Residual catalog-like exclusives ──────────────────────────────────
-    # Catalog-like exclusives that are NOT readthroughs and NOT unknown_likely_coding
-    cat_only_catalog = exclusive_obs[
-        exclusive_obs["exclusive_side"].eq("cat_only") & exclusive_obs["catalog_like"]
-    ]
-    residual_cat = cat_only_catalog[~cat_only_catalog["cat_gene_id"].isin(readthrough_ids | ulc_ids)]
-
-    ens_only_all = exclusive_obs[
-        exclusive_obs["exclusive_side"].eq("ensembl_only") & exclusive_obs["catalog_like"]
-    ]
-
+    # ── 4. Residual catalog-like exclusives ───────────────────────────────────
     def _classify_against_pairs(
         obs: pd.DataFrame, id_col: str, pairs: pd.DataFrame, pairs_id_col: str
     ) -> pd.DataFrame:
-        """Label each exclusive gene as 'in_pairs_all', 'rbh_only', or 'absent'."""
+        """Label each exclusive gene as 'in_pairs_all_non_rbh', 'rbh_only', or 'absent'."""
         if obs.empty:
             return obs.assign(pairs_status="absent")
         if pairs.empty or pairs_id_col not in pairs.columns:
             return obs.assign(pairs_status="pairs_data_unavailable")
-        ids_in_pairs = set(pairs[pairs_id_col].dropna().astype(str))
-        ids_rbh_only = set(
-            pairs.loc[pairs["is_rbh"].eq(True), pairs_id_col].dropna().astype(str)
-        )
         ids_non_rbh = set(
             pairs.loc[~pairs["is_rbh"].eq(True), pairs_id_col].dropna().astype(str)
-        )
+        ) if "is_rbh" in pairs.columns else set()
+        ids_rbh_only = set(
+            pairs.loc[pairs["is_rbh"].eq(True), pairs_id_col].dropna().astype(str)
+        ) if "is_rbh" in pairs.columns else set()
+        ids_in_pairs = set(pairs[pairs_id_col].dropna().astype(str))
 
         def classify(gid: object) -> str:
             gid = str(gid) if pd.notna(gid) else ""
             if gid in ids_non_rbh:
-                return "in_pairs_all_non_rbh"   # has spatial overlap but not RBH
+                return "in_pairs_all_non_rbh"
             if gid in ids_rbh_only:
-                return "rbh_only"               # only found via name match in all-pairs
+                return "rbh_only"
             if gid in ids_in_pairs:
                 return "in_pairs_all"
             return "absent"
 
         return obs.assign(pairs_status=obs[id_col].map(classify))
 
+    residual_cat = cat_only_catalog_obs[
+        cat_only_catalog_obs.get("cat_gene_id", pd.Series(dtype=str)).isin(cat_only_catalog_ids)
+    ] if "cat_gene_id" in cat_only_catalog_obs.columns else cat_only_catalog_obs
+
+    pairs_for_cat = (
+        pairs_subset[pairs_subset["cat_gene_id"].isin(cat_only_catalog_ids)]
+        if not pairs_subset.empty and "cat_gene_id" in pairs_subset.columns
+        else pd.DataFrame()
+    )
+    pairs_for_ens = (
+        pairs_subset[pairs_subset["ensembl_gene_id"].isin(ens_only_catalog_ids)]
+        if not pairs_subset.empty and "ensembl_gene_id" in pairs_subset.columns
+        else pd.DataFrame()
+    )
+
     residual_cat_classified = _classify_against_pairs(
-        residual_cat, "cat_gene_id", pairs_all, "cat_gene_id"
+        residual_cat, "cat_gene_id", pairs_for_cat, "cat_gene_id"
     )
     residual_ens_classified = _classify_against_pairs(
-        ens_only_all, "ensembl_gene_id", pairs_all, "ensembl_gene_id"
+        ens_only_catalog_obs, "ensembl_gene_id", pairs_for_ens, "ensembl_gene_id"
     )
 
     return {
-        "pairs_all": pairs_all,
-        "multi_mapping": mm,
         "readthrough_in_pairs": rt_in_pairs,
         "readthrough_multi": rt_multi,
         "ulc_in_pairs": ulc_in_pairs,

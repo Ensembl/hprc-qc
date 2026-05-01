@@ -48,6 +48,31 @@ params.gencode_gtf = null
 params.mapping_stats_genes = null
 params.mapping_stats_transcripts = null
 
+// Optional CAT GFF filtering branch, used for no-Kinnex/no-ULC sensitivity runs
+params.filter_cat_gff = false
+params.filter_cat_exclude_biotypes = 'unknown_likely_coding'
+
+// Optional QC endpoints. Keep defaults equivalent to the historical full run.
+params.run_transcript_concordance = true
+params.run_coding_integrity = true
+params.run_gene_presence = true
+params.run_multi_mapping = true
+params.run_grch38_divergence = true
+params.run_gene_transcript_counts = true
+params.run_cat_gene_transcript_counts = true
+params.run_gff_feature_metrics = true
+
+// Optional aggregation endpoints. For Panel G no-ULC runs, only intron-chain
+// aggregation is needed in addition to transcript concordance and count inputs.
+params.run_aggregate = true
+params.aggregate_gene_presence = true
+params.aggregate_sankey = true
+params.aggregate_coding_integrity = true
+params.aggregate_transcript_counts = true
+params.aggregate_divergence = true
+params.aggregate_concordance_vs_ref = true
+params.aggregate_intron_chain_by_biotype = true
+
 include { ENSEMBL_CAT_COMPARISON } from './workflows/ensembl_cat_comparison'
 
 // Help message
@@ -79,6 +104,12 @@ def helpMessage() {
     Projection rates (SUPP-A):
         --mapping_stats_genes       CSV with per-assembly gene projection rates
         --mapping_stats_transcripts CSV with per-assembly transcript projection rates
+
+    Sensitivity / endpoint controls:
+        --filter_cat_gff true
+        --filter_cat_exclude_biotypes unknown_likely_coding
+        --run_<endpoint> false       Disable selected QC endpoints for focused reruns
+        --aggregate_<endpoint> false Disable selected aggregation endpoints
 
     Example CSV format:
         assembly_accession,sample_name

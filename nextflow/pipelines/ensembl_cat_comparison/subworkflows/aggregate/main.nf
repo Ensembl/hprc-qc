@@ -21,44 +21,79 @@ workflow AGGREGATE {
     gff_tx_metrics     // Channel of per-assembly tx_metrics.tsv (collected)
 
     main:
-    // Run all aggregations in parallel
-    AGGREGATE_GENE_PRESENCE(gene_presence_files)
+    // Run selected aggregations in parallel. Defaults run everything.
+    if (params.aggregate_gene_presence) {
+        AGGREGATE_GENE_PRESENCE(gene_presence_files)
+        gene_presence_summaries_ch = AGGREGATE_GENE_PRESENCE.out.summaries
+    } else {
+        gene_presence_summaries_ch = Channel.empty()
+    }
 
-    AGGREGATE_SANKEY(
-        gene_presence_files,
-        rbh_files,
-        transcript_concordance_files,
-        coding_integrity_files
-    )
+    if (params.aggregate_sankey) {
+        AGGREGATE_SANKEY(
+            gene_presence_files,
+            rbh_files,
+            transcript_concordance_files,
+            coding_integrity_files
+        )
+        sankey_summaries_ch = AGGREGATE_SANKEY.out.summaries
+    } else {
+        sankey_summaries_ch = Channel.empty()
+    }
 
-    AGGREGATE_CODING_INTEGRITY(coding_integrity_files)
+    if (params.aggregate_coding_integrity) {
+        AGGREGATE_CODING_INTEGRITY(coding_integrity_files)
+        coding_integrity_summaries_ch = AGGREGATE_CODING_INTEGRITY.out.summaries
+    } else {
+        coding_integrity_summaries_ch = Channel.empty()
+    }
 
-    AGGREGATE_TRANSCRIPT_COUNTS(transcript_concordance_files)
+    if (params.aggregate_transcript_counts) {
+        AGGREGATE_TRANSCRIPT_COUNTS(transcript_concordance_files)
+        transcript_count_summaries_ch = AGGREGATE_TRANSCRIPT_COUNTS.out.summaries
+    } else {
+        transcript_count_summaries_ch = Channel.empty()
+    }
 
-    AGGREGATE_INTRON_CHAIN_BY_BIOTYPE(
-        transcript_concordance_files,
-        gene_transcript_count_files,
-        cat_gene_transcript_count_files
-    )
+    if (params.aggregate_intron_chain_by_biotype) {
+        AGGREGATE_INTRON_CHAIN_BY_BIOTYPE(
+            transcript_concordance_files,
+            gene_transcript_count_files,
+            cat_gene_transcript_count_files
+        )
+        intron_chain_biotype_summaries_ch = AGGREGATE_INTRON_CHAIN_BY_BIOTYPE.out.summaries
+    } else {
+        intron_chain_biotype_summaries_ch = Channel.empty()
+    }
 
     // No aggregator yet for gff_compare: the notebook will read them directly from qc_metrics
 
-    AGGREGATE_DIVERGENCE(divergence_files)
+    if (params.aggregate_divergence) {
+        AGGREGATE_DIVERGENCE(divergence_files)
+        divergence_summaries_ch = AGGREGATE_DIVERGENCE.out.summaries
+    } else {
+        divergence_summaries_ch = Channel.empty()
+    }
 
-    AGGREGATE_CONCORDANCE_VS_REF(
-        rbh_files,
-        transcript_concordance_files,
-        coding_integrity_files,
-        divergence_files,
-        multi_mapping_files,
-    )
+    if (params.aggregate_concordance_vs_ref) {
+        AGGREGATE_CONCORDANCE_VS_REF(
+            rbh_files,
+            transcript_concordance_files,
+            coding_integrity_files,
+            divergence_files,
+            multi_mapping_files,
+        )
+        concordance_vs_ref_summaries_ch = AGGREGATE_CONCORDANCE_VS_REF.out.summaries
+    } else {
+        concordance_vs_ref_summaries_ch = Channel.empty()
+    }
 
     emit:
-    gene_presence_summaries      = AGGREGATE_GENE_PRESENCE.out.summaries
-    sankey_summaries             = AGGREGATE_SANKEY.out.summaries
-    coding_integrity_summaries   = AGGREGATE_CODING_INTEGRITY.out.summaries
-    transcript_count_summaries   = AGGREGATE_TRANSCRIPT_COUNTS.out.summaries
-    divergence_summaries         = AGGREGATE_DIVERGENCE.out.summaries
-    concordance_vs_ref_summaries = AGGREGATE_CONCORDANCE_VS_REF.out.summaries
-    intron_chain_biotype_summaries = AGGREGATE_INTRON_CHAIN_BY_BIOTYPE.out.summaries
+    gene_presence_summaries      = gene_presence_summaries_ch
+    sankey_summaries             = sankey_summaries_ch
+    coding_integrity_summaries   = coding_integrity_summaries_ch
+    transcript_count_summaries   = transcript_count_summaries_ch
+    divergence_summaries         = divergence_summaries_ch
+    concordance_vs_ref_summaries = concordance_vs_ref_summaries_ch
+    intron_chain_biotype_summaries = intron_chain_biotype_summaries_ch
 }

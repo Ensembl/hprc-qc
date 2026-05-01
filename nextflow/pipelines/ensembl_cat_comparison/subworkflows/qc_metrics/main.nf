@@ -32,15 +32,67 @@ workflow QC_METRICS {
         }
         .set { qc_inputs }
 
-    // Run QC analyses in parallel
-    TRANSCRIPT_CONCORDANCE(qc_inputs.transcript)
-    CODING_INTEGRITY(qc_inputs.coding)
-    GENE_PRESENCE(qc_inputs.presence.combine(ensg_lookup))
-    MULTI_MAPPING(qc_inputs.multi)
-    GRCH38_DIVERGENCE(qc_inputs.divergence, gencode_gtf.first())
-    COUNT_GFF_TRANSCRIPTS(qc_inputs.gff_only)
-    COUNT_CAT_GFF_TRANSCRIPTS(qc_inputs.cat_gff_only)
-    GFF_COMPARE(qc_inputs.gff_pair)
+    // Run selected QC analyses in parallel. Defaults run everything; sensitivity
+    // runs can disable heavy endpoints and keep only the outputs needed.
+    if (params.run_transcript_concordance) {
+        TRANSCRIPT_CONCORDANCE(qc_inputs.transcript)
+        transcript_concordance_ch = TRANSCRIPT_CONCORDANCE.out.metrics
+    } else {
+        transcript_concordance_ch = Channel.empty()
+    }
+
+    if (params.run_coding_integrity) {
+        CODING_INTEGRITY(qc_inputs.coding)
+        coding_integrity_ch = CODING_INTEGRITY.out.metrics
+    } else {
+        coding_integrity_ch = Channel.empty()
+    }
+
+    if (params.run_gene_presence) {
+        GENE_PRESENCE(qc_inputs.presence.combine(ensg_lookup))
+        gene_presence_ch = GENE_PRESENCE.out.metrics
+    } else {
+        gene_presence_ch = Channel.empty()
+    }
+
+    if (params.run_multi_mapping) {
+        MULTI_MAPPING(qc_inputs.multi)
+        multi_mapping_ch = MULTI_MAPPING.out.metrics
+    } else {
+        multi_mapping_ch = Channel.empty()
+    }
+
+    if (params.run_grch38_divergence) {
+        GRCH38_DIVERGENCE(qc_inputs.divergence, gencode_gtf.first())
+        grch38_divergence_ch = GRCH38_DIVERGENCE.out.metrics
+    } else {
+        grch38_divergence_ch = Channel.empty()
+    }
+
+    if (params.run_gene_transcript_counts) {
+        COUNT_GFF_TRANSCRIPTS(qc_inputs.gff_only)
+        gene_transcript_counts_ch = COUNT_GFF_TRANSCRIPTS.out.counts
+    } else {
+        gene_transcript_counts_ch = Channel.empty()
+    }
+
+    if (params.run_cat_gene_transcript_counts) {
+        COUNT_CAT_GFF_TRANSCRIPTS(qc_inputs.cat_gff_only)
+        cat_gene_transcript_counts_ch = COUNT_CAT_GFF_TRANSCRIPTS.out.cat_counts
+    } else {
+        cat_gene_transcript_counts_ch = Channel.empty()
+    }
+
+    if (params.run_gff_feature_metrics) {
+        GFF_COMPARE(qc_inputs.gff_pair)
+        gff_feature_counts_ch = GFF_COMPARE.out.features
+        gff_gene_metrics_ch = GFF_COMPARE.out.gene_metrics
+        gff_tx_metrics_ch = GFF_COMPARE.out.tx_metrics
+    } else {
+        gff_feature_counts_ch = Channel.empty()
+        gff_gene_metrics_ch = Channel.empty()
+        gff_tx_metrics_ch = Channel.empty()
+    }
 
     // Optionally run gffcompare-based transcript overlap analysis (--run_gffcompare)
     if (params.run_gffcompare) {
@@ -72,16 +124,16 @@ workflow QC_METRICS {
     }
 
     emit:
-    transcript_concordance     = TRANSCRIPT_CONCORDANCE.out.metrics
-    coding_integrity           = CODING_INTEGRITY.out.metrics
-    gene_presence              = GENE_PRESENCE.out.metrics
-    multi_mapping              = MULTI_MAPPING.out.metrics
-    grch38_divergence          = GRCH38_DIVERGENCE.out.metrics
-    gene_transcript_counts     = COUNT_GFF_TRANSCRIPTS.out.counts
-    cat_gene_transcript_counts = COUNT_CAT_GFF_TRANSCRIPTS.out.cat_counts
-    gff_feature_counts         = GFF_COMPARE.out.features
-    gff_gene_metrics           = GFF_COMPARE.out.gene_metrics
-    gff_tx_metrics             = GFF_COMPARE.out.tx_metrics
+    transcript_concordance     = transcript_concordance_ch
+    coding_integrity           = coding_integrity_ch
+    gene_presence              = gene_presence_ch
+    multi_mapping              = multi_mapping_ch
+    grch38_divergence          = grch38_divergence_ch
+    gene_transcript_counts     = gene_transcript_counts_ch
+    cat_gene_transcript_counts = cat_gene_transcript_counts_ch
+    gff_feature_counts         = gff_feature_counts_ch
+    gff_gene_metrics           = gff_gene_metrics_ch
+    gff_tx_metrics             = gff_tx_metrics_ch
     gffcompare_tmap            = gffcompare_tmap_ch
     gffcompare_stats           = gffcompare_stats_ch
     gffcompare_class_counts    = gffcompare_class_counts_ch

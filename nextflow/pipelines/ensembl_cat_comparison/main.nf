@@ -50,7 +50,15 @@ params.mapping_stats_transcripts = null
 
 // Optional CAT GFF filtering branch, used for no-Kinnex/no-ULC sensitivity runs
 params.filter_cat_gff = false
+params.filter_cat_filter_name = 'filtered_cat'
 params.filter_cat_exclude_biotypes = 'unknown_likely_coding'
+params.filter_cat_exclude_sources = ''
+params.filter_cat_exclude_transcript_modes = ''
+params.filter_cat_exclude_gene_name_regex = ''
+params.filter_cat_exclude_hyphenated_gene_names = false
+params.filter_cat_exclude_attr_nonempty = ''
+params.filter_cat_exclude_attr_equals = ''
+params.filter_cat_exclude_attr_in = ''
 
 // Optional QC endpoints. Keep defaults equivalent to the historical full run.
 params.run_transcript_concordance = true
@@ -107,7 +115,14 @@ def helpMessage() {
 
     Sensitivity / endpoint controls:
         --filter_cat_gff true
+        --filter_cat_filter_name no_unknown_likely_coding
         --filter_cat_exclude_biotypes unknown_likely_coding
+        --filter_cat_exclude_hyphenated_gene_names true
+        --filter_cat_exclude_attr_nonempty collapsed_gene_ids,collapsed_gene_names
+        --filter_cat_exclude_attr_equals extra_paralog=True
+        --filter_cat_exclude_attr_in transcript_class=paralog|possible_paralog
+        --filter_cat_exclude_transcript_modes augPB,exRef,Liftoff
+        --filter_cat_exclude_sources Liftoff
         --run_<endpoint> false       Disable selected QC endpoints for focused reruns
         --aggregate_<endpoint> false Disable selected aggregation endpoints
 

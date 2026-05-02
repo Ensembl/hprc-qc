@@ -66,9 +66,11 @@ workflow ENSEMBL_CAT_COMPARISON {
                 tuple(acc, sample, renamed_ens, filtered_cat)
             }
         filtered_cat_gffs_ch = FILTER_CAT_GFF.out.gff
+        filtered_cat_audits_ch = FILTER_CAT_GFF.out.audit
     } else {
         analysis_paired = renamed_paired
         filtered_cat_gffs_ch = Channel.empty()
+        filtered_cat_audits_ch = Channel.empty()
     }
 
     // RUN_COMPARISON expects [accession, sample, ensembl_gff, cat_gff].
@@ -168,6 +170,7 @@ workflow ENSEMBL_CAT_COMPARISON {
     emit:
     renamed_ensembl_gffs = RENAME_ENSEMBL_GFF.out.gff
     filtered_cat_gffs = filtered_cat_gffs_ch
+    filtered_cat_audits = filtered_cat_audits_ch
     rbh = RUN_COMPARISON.out.rbh
     all_pairs = RUN_COMPARISON.out.all_pairs
     logs = RUN_COMPARISON.out.log

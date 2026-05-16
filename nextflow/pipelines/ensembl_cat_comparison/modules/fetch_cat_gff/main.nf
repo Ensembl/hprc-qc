@@ -39,7 +39,7 @@ process FETCH_CAT_GFF {
 
     # Try each sample name variant
     for SAMPLE_VAR in \${SAMPLE_NAMES}; do
-        CAT_FILE="\${SAMPLE_VAR}_CAT_v2.0.gff3.gz"
+        CAT_FILE="\${SAMPLE_VAR}_consensus.gff3.gz"
         URL="\${BASE_URL}/\${CAT_FILE}"
         echo "Trying: \${URL}" >&2
 

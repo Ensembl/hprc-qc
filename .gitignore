@@ -1,0 +1,38 @@
+.DS_Store
+
+# Nextflow runtime state
+.nextflow/
+.nextflow*
+work/
+**/.nextflow/
+**/.nextflow*
+**/work/
+
+# Pipeline caches and generated result directories
+cache/
+**/cache/
+results/
+results_*/
+**/results/
+**/results_*/
+
+# Jupyter
+**/.ipynb_checkpoints/
+
+# Python
+__pycache__/
+**/__pycache__/
+*.py[cod]
+
+# Local handover/build artifacts
+outputs/
+data/
+nextflow/pipelines/ensembl_cat_comparison/notebooks/figures/
+nextflow/pipelines/ensembl_cat_comparison/notebooks/backups/
+
+# Large local annotation/index files
+*.gff3
+*.gff3.gz
+*.gtf
+*.gtf.gz
+*.tbi

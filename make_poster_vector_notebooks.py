@@ -35,6 +35,20 @@ def export_block(name):
 
 for branch, path, cells in TARGETS:
     data = json.loads(source_from_git(branch, path))
+    # Keep the source notebook's default relative path, but allow HPC runs to
+    # point at the existing large supplementary-data handoff directory.
+    if path.endswith('/annotation_exploration.ipynb'):
+        for cell in data['cells']:
+            if cell.get('cell_type') == 'code':
+                source = ''.join(cell.get('source', []))
+                if "DATA  = Path('../../../../data/supplementary_tables')" in source:
+                    source = source.replace(
+                        "DATA  = Path('../../../../data/supplementary_tables')",
+                        "DATA  = Path(os.environ.get('HPRC_POSTER_DATA_DIR', '../../../../data/supplementary_tables'))",
+                    )
+                    source = 'import os\n' + source if 'import os\n' not in source else source
+                    cell['source'] = source
+                    break
     for idx, name in cells.items():
         if idx >= len(data['cells']) or data['cells'][idx].get('cell_type') != 'code':
             raise RuntimeError(f'Expected code cell {idx} in {path}')

@@ -13,7 +13,7 @@ NOTEBOOK_DIR = ROOT / 'nextflow/pipelines/ensembl_cat_comparison/notebooks'
 PATCHED_DIR = ROOT / 'poster_exports_v1/notebooks_vector'
 EXECUTED_DIR = OUT / 'executed_notebooks'
 KERNEL = os.environ.get('HPRC_JUPYTER_KERNEL', 'python3')
-REQUIRED_MODULES = ['numpy', 'pandas', 'matplotlib', 'seaborn', 'scipy', 'sklearn', 'umap', 'mygene']
+REQUIRED_MODULES = ['numpy', 'pandas', 'matplotlib', 'seaborn', 'scipy', 'sklearn', 'umap', 'mygene', 'pyarrow']
 
 def run(args, cwd=ROOT):
     print('+', ' '.join(str(x) for x in args), flush=True)

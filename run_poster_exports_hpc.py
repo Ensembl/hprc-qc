@@ -14,9 +14,9 @@ PATCHED_DIR = ROOT / 'poster_exports_v1/notebooks_vector'
 EXECUTED_DIR = OUT / 'executed_notebooks'
 KERNEL = os.environ.get('HPRC_JUPYTER_KERNEL', 'python3')
 
-def run(args):
+def run(args, cwd=ROOT):
     print('+', ' '.join(str(x) for x in args), flush=True)
-    subprocess.run(args, cwd=ROOT, check=True)
+    subprocess.run(args, cwd=cwd, check=True)
 
 OUT.mkdir(parents=True, exist_ok=True)
 EXECUTED_DIR.mkdir(parents=True, exist_ok=True)
@@ -38,10 +38,9 @@ for name in notebooks:
         'jupyter', 'nbconvert', '--to', 'notebook', '--execute',
         '--ExecutePreprocessor.timeout=-1',
         f'--ExecutePreprocessor.kernel_name={KERNEL}',
-        f'--ExecutePreprocessor.cwd={NOTEBOOK_DIR}',
         '--output-dir', str(EXECUTED_DIR), '--output', name,
         str(PATCHED_DIR / name),
-    ])
+    ], cwd=NOTEBOOK_DIR)
 
 # The export cells use the notebook working directory so all original relative
 # data paths remain valid. Consolidate their products into the requested folder.

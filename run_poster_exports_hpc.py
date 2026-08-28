@@ -13,6 +13,7 @@ NOTEBOOK_DIR = ROOT / 'nextflow/pipelines/ensembl_cat_comparison/notebooks'
 PATCHED_DIR = ROOT / 'poster_exports_v1/notebooks_vector'
 EXECUTED_DIR = OUT / 'executed_notebooks'
 KERNEL = os.environ.get('HPRC_JUPYTER_KERNEL', 'python3')
+REQUIRED_MODULES = ['numpy', 'pandas', 'matplotlib', 'seaborn', 'scipy', 'sklearn', 'umap', 'mygene']
 
 def run(args, cwd=ROOT):
     print('+', ' '.join(str(x) for x in args), flush=True)
@@ -22,6 +23,16 @@ OUT.mkdir(parents=True, exist_ok=True)
 EXECUTED_DIR.mkdir(parents=True, exist_ok=True)
 run(['jupyter', 'kernelspec', 'list'])
 run([sys.executable, '-c', 'import ipykernel; print("ipykernel:", ipykernel.__version__)'])
+check = subprocess.run(
+    [sys.executable, '-c',
+     'import importlib.util; mods=' + repr(REQUIRED_MODULES) +
+     '; missing=[m for m in mods if importlib.util.find_spec(m) is None]; '
+     'print("Missing modules:", ", ".join(missing) if missing else "none"); '
+     'raise SystemExit(1 if missing else 0)'],
+    cwd=ROOT,
+)
+if check.returncode:
+    raise SystemExit('Install the missing Python packages before rerunning the export job.')
 run([sys.executable, str(ROOT / 'make_poster_vector_notebooks.py')])
 
 notebooks = [

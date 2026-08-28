@@ -49,6 +49,15 @@ for branch, path, cells in TARGETS:
                     source = 'import os\n' + source if 'import os\n' not in source else source
                     cell['source'] = source
                     break
+    if path.endswith('/annotation_exploration.ipynb'):
+        for cell in data['cells']:
+            if cell.get('cell_type') == 'code':
+                source = ''.join(cell.get('source', []))
+                source = source.replace(
+                    "top_cat_sorted['chrom'].fillna('?').astype(str)",
+                    "top_cat_sorted['chrom'].astype('string').fillna('?').astype(str)",
+                )
+                cell['source'] = source
     for idx, name in cells.items():
         if idx >= len(data['cells']) or data['cells'][idx].get('cell_type') != 'code':
             raise RuntimeError(f'Expected code cell {idx} in {path}')

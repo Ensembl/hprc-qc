@@ -12,6 +12,7 @@ OUT = Path(os.environ.get('HPRC_POSTER_EXPORT_DIR', ROOT / 'results/poster_vecto
 NOTEBOOK_DIR = ROOT / 'nextflow/pipelines/ensembl_cat_comparison/notebooks'
 PATCHED_DIR = ROOT / 'poster_exports_v1/notebooks_vector'
 EXECUTED_DIR = OUT / 'executed_notebooks'
+KERNEL = os.environ.get('HPRC_JUPYTER_KERNEL', 'python3')
 
 def run(args):
     print('+', ' '.join(str(x) for x in args), flush=True)
@@ -19,6 +20,8 @@ def run(args):
 
 OUT.mkdir(parents=True, exist_ok=True)
 EXECUTED_DIR.mkdir(parents=True, exist_ok=True)
+run(['jupyter', 'kernelspec', 'list'])
+run([sys.executable, '-c', 'import ipykernel; print("ipykernel:", ipykernel.__version__)'])
 run([sys.executable, str(ROOT / 'make_poster_vector_notebooks.py')])
 
 notebooks = [
@@ -34,6 +37,7 @@ for name in notebooks:
     run([
         'jupyter', 'nbconvert', '--to', 'notebook', '--execute',
         '--ExecutePreprocessor.timeout=-1',
+        f'--ExecutePreprocessor.kernel_name={KERNEL}',
         f'--ExecutePreprocessor.cwd={NOTEBOOK_DIR}',
         '--output-dir', str(EXECUTED_DIR), '--output', name,
         str(PATCHED_DIR / name),

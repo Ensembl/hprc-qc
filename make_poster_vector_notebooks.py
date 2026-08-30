@@ -58,6 +58,21 @@ for branch, path, cells in TARGETS:
                     "top_cat_sorted['chrom'].astype('string').fillna('?').astype(str)",
                 )
                 cell['source'] = source
+    if path.endswith('/figure_supp_a_projection_rates.ipynb'):
+        for cell in data['cells']:
+            if cell.get('cell_type') == 'code':
+                source = ''.join(cell.get('source', []))
+                if "GENE_STATS_CSV = Path('../../../../HPRC_2 - Mapping stats gene.csv')" in source:
+                    source = source.replace(
+                        "GENE_STATS_CSV = Path('../../../../HPRC_2 - Mapping stats gene.csv')",
+                        "GENE_STATS_CSV = Path(os.environ.get('HPRC_POSTER_GENE_STATS_CSV', '../../../../HPRC_2 - Mapping stats gene.csv'))",
+                    ).replace(
+                        "TX_STATS_CSV = Path('../../../../HPRC_2 - Mapping stats transcript.csv')",
+                        "TX_STATS_CSV = Path(os.environ.get('HPRC_POSTER_TX_STATS_CSV', '../../../../HPRC_2 - Mapping stats transcript.csv'))",
+                    )
+                    source = 'import os\n' + source if 'import os\n' not in source else source
+                    cell['source'] = source
+                    break
     for idx, name in cells.items():
         if idx >= len(data['cells']) or data['cells'][idx].get('cell_type') != 'code':
             raise RuntimeError(f'Expected code cell {idx} in {path}')

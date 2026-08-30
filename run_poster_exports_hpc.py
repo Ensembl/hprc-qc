@@ -43,6 +43,12 @@ notebooks = [
     'figure_supp_b_biotype_exclusives.ipynb',
     'figure_supp_c_cds_heatmaps.ipynb',
 ]
+requested = os.environ.get('HPRC_POSTER_NOTEBOOKS', '').strip()
+if requested:
+    requested_set = {x.strip() for x in requested.split(',') if x.strip()}
+    notebooks = [name for name in notebooks if name in requested_set]
+    if not notebooks:
+        raise SystemExit('HPRC_POSTER_NOTEBOOKS did not select any known notebooks.')
 
 for name in notebooks:
     run([

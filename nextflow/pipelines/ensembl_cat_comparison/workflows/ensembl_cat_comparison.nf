@@ -13,7 +13,7 @@ workflow ENSEMBL_CAT_COMPARISON {
 
     main:
     // Fetch GENCODE GTF only when GRCh38 divergence is requested.
-    if (params.run_grch38_divergence) {
+    if (params.run_grch38_divergence.toString().toBoolean()) {
         gencode_ch = Channel.value(params.gencode_version)
         if (params.gencode_gtf) {
             gencode_gtf_ch = Channel.fromPath(params.gencode_gtf, checkIfExists: true)
@@ -27,33 +27,43 @@ workflow ENSEMBL_CAT_COMPARISON {
 
     // Fetch GFF files and assembly reports
     FETCH_FILES(assemblies_ch)
-    // Rename Ensembl GFF chromosomes to match CAT (GenBank accessions)
-    // This is needed for GFFcompare, track hubs, and any tool that compares
-    // the two GFFs by chromosome name. The assembly report maps
-    // Assigned-Molecule (1, X) -> GenBank-Accn (CM089370.1, CM089395.1).
-    FETCH_FILES.out.paired
-        .map { accession, sample, ensembl_gff, cat_gff, assembly_report ->
-            tuple(accession, sample, ensembl_gff, assembly_report)
-        }
-        .set { rename_input }
-    RENAME_ENSEMBL_GFF(rename_input)
 
-    // Build channel with renamed Ensembl GFF replacing original
-    renamed_paired = RENAME_ENSEMBL_GFF.out.gff
-        .join(
-            FETCH_FILES.out.paired.map { acc, sample, ens, cat, report ->
-                tuple(acc, sample, cat)
-            },
-            by: [0, 1]
-        )
-        .map { acc, sample, renamed_ens, cat ->
-            tuple(acc, sample, renamed_ens, cat)
-        }
+    if (params.rename_ensembl_gff.toString().toBoolean()) {
+        // Rename Ensembl GFF chromosomes to match CAT (GenBank accessions).
+        // The assembly report maps Assigned-Molecule (1, X) -> GenBank-Accn.
+        FETCH_FILES.out.paired
+            .map { accession, sample, ensembl_gff, cat_gff, assembly_report ->
+                tuple(accession, sample, ensembl_gff, assembly_report)
+            }
+            .set { rename_input }
+        RENAME_ENSEMBL_GFF(rename_input)
+
+        renamed_paired = RENAME_ENSEMBL_GFF.out.gff
+            .join(
+                FETCH_FILES.out.paired.map { acc, sample, ens, cat, report ->
+                    tuple(acc, sample, cat)
+                },
+                by: [0, 1]
+            )
+            .map { acc, sample, renamed_ens, cat ->
+                tuple(acc, sample, renamed_ens, cat)
+            }
+        renamed_ensembl_gffs_ch = RENAME_ENSEMBL_GFF.out.gff
+    } else {
+        renamed_paired = FETCH_FILES.out.paired
+            .map { accession, sample, ensembl_gff, cat_gff, assembly_report ->
+                tuple(accession, sample, ensembl_gff, cat_gff)
+            }
+        renamed_ensembl_gffs_ch = FETCH_FILES.out.paired
+            .map { accession, sample, ensembl_gff, cat_gff, assembly_report ->
+                tuple(accession, sample, ensembl_gff)
+            }
+    }
 
     // Optionally filter CAT GFF before comparison, e.g. for no-Kinnex/no-ULC
     // sensitivity runs. The filtered CAT GFF then goes through the normal RBH
     // comparison and QC path.
-    if (params.filter_cat_gff) {
+    if (params.filter_cat_gff.toString().toBoolean()) {
         FILTER_CAT_GFF(
             renamed_paired.map { acc, sample, renamed_ens, cat ->
                 tuple(acc, sample, cat)
@@ -101,7 +111,7 @@ workflow ENSEMBL_CAT_COMPARISON {
     divergence_summaries_ch = Channel.empty()
     intron_chain_biotype_summaries_ch = Channel.empty()
 
-    if (params.run_aggregate) {
+    if (params.run_aggregate.toString().toBoolean()) {
         // Aggregate selected per-assembly results into intermediate spreadsheets.
         collected_gene_presence = QC_METRICS.out.gene_presence
             .map { accession, sample, tsv -> tsv }
@@ -168,7 +178,7 @@ workflow ENSEMBL_CAT_COMPARISON {
     }
 
     emit:
-    renamed_ensembl_gffs = RENAME_ENSEMBL_GFF.out.gff
+    renamed_ensembl_gffs = renamed_ensembl_gffs_ch
     filtered_cat_gffs = filtered_cat_gffs_ch
     filtered_cat_audits = filtered_cat_audits_ch
     rbh = RUN_COMPARISON.out.rbh

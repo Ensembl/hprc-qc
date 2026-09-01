@@ -8,7 +8,7 @@ process FETCH_CAT_GFF {
     publishDir "${params.cat_cache_dir}", mode: 'copy'
 
     input:
-    tuple val(assembly_accession), val(sample_name)
+    tuple val(assembly_accession), val(sample_name), val(cat_gff_url), val(cat_gff_path)
 
     output:
     tuple val(assembly_accession), val(sample_name), path("*.gff3.gz", optional: true), emit: gff
@@ -16,6 +16,34 @@ process FETCH_CAT_GFF {
     script:
     """
     set -e
+
+    if [ -n "${cat_gff_path}" ]; then
+        echo "Using local CAT GFF: ${cat_gff_path}" >&2
+        case "${cat_gff_path}" in
+            *.gz)
+                cp "${cat_gff_path}" ${sample_name}_cat.gff3.gz
+                ;;
+            *)
+                gzip -c "${cat_gff_path}" > ${sample_name}_cat.gff3.gz
+                ;;
+        esac
+        test -s ${sample_name}_cat.gff3.gz
+        exit 0
+    fi
+
+    if [ -n "${cat_gff_url}" ]; then
+        echo "Downloading CAT GFF from explicit URL: ${cat_gff_url}" >&2
+        case "${cat_gff_url}" in
+            *.gz|*.gz\\?*|*.gz#*)
+                curl -fsSL -o ${sample_name}_cat.gff3.gz "${cat_gff_url}"
+                ;;
+            *)
+                curl -fsSL "${cat_gff_url}" | awk '/^##FASTA/ { exit } { print }' | gzip -c > ${sample_name}_cat.gff3.gz
+                ;;
+        esac
+        test -s ${sample_name}_cat.gff3.gz
+        exit 0
+    fi
 
     BASE_URL="https://public.gi.ucsc.edu/~pnhebbar/share/hprc/catv2.0_genes"
 

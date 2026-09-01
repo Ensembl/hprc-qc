@@ -28,6 +28,46 @@ The workflow also requires an ENSG lookup table passed with `--ensg_lookup`.
 This is used when comparing gene presence for annotations where the shared gene
 identifier is not directly available as a common gene name.
 
+Rows may optionally include `ensembl_gff_url`, `cat_gff_url`,
+`ensembl_gff_path` and `cat_gff_path` columns. When set, the fetch step
+downloads or copies those exact files into the normal local cache and uses the
+cached filenames expected by downstream processes. Plain GFF files are gzipped
+during fetch so the rest of the workflow can consume a consistent `.gff3.gz`
+input.
+
+## T2T CHM13 Local Setup
+
+The one-off T2T sample sheet is:
+
+```text
+sample_sheets/t2t_chm13.csv
+```
+
+It points at the requested Ensembl and CAT annotations:
+
+```text
+Ensembl: https://ftp.ebi.ac.uk/pub/ensemblorganisms/Homo_sapiens/GCA_009914755.4/ensembl/geneset/2022_07/genes.gff3.gz
+CAT:     https://public.gi.ucsc.edu/~pnhebbar/share/CHM13_consensus.gff3
+```
+
+No files are downloaded until Nextflow is run. For a local focused comparison
+that avoids extra reference downloads and does not need an ENSG lookup, use:
+
+```bash
+nextflow run /path/to/hprc-qc/nextflow/pipelines/ensembl_cat_comparison/main.nf \
+  --outdir t2t_chm13_results \
+  --input /path/to/hprc-qc/nextflow/pipelines/ensembl_cat_comparison/sample_sheets/t2t_chm13.csv \
+  -profile standard \
+  --run_gene_presence false \
+  --run_grch38_divergence false \
+  --run_aggregate false \
+  --contig_normalization basic \
+  -resume
+```
+
+If you want the full default metrics, provide `--ensg_lookup` and leave the
+endpoint flags at their defaults.
+
 ## Full Feature Set Run
 
 Use this form for the unfiltered comparison:

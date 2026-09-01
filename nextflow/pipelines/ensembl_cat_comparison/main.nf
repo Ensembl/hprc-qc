@@ -14,7 +14,7 @@ nextflow.enable.dsl = 2
     Required Parameters:
         --input             CSV file with columns: assembly_accession,sample_name
         --outdir            Output directory for results
-        --ensg_lookup       Path to transcript ID to ENSG ID lookup table
+        --ensg_lookup       Path to transcript ID to ENSG ID lookup table, required when gene presence is enabled
 
     Optional Parameters:
         --ensembl_cache_dir         Directory to cache Ensembl GFFs (default: ./cache/ensembl)
@@ -37,6 +37,8 @@ params.ensembl_cache_dir = './cache/ensembl'
 params.cat_cache_dir = './cache/cat'
 params.assembly_reports_dir = './cache/assembly_reports'
 params.comparison_script = "${projectDir}/bin/hprc_ensembl_cat_overlap.py"
+params.contig_normalization = 'none'
+params.rename_ensembl_gff = true
 params.max_assemblies = null
 params.help = false
 
@@ -96,15 +98,19 @@ def helpMessage() {
         nextflow run main.nf --input assemblies.csv --outdir results
 
     Required arguments:
-        --input               CSV file with 'assembly_accession' and 'sample_name' columns
+        --input               CSV file with 'assembly_accession' and 'sample_name' columns.
+                              Optional per-row columns: 'ensembl_gff_url', 'cat_gff_url',
+                              'ensembl_gff_path', 'cat_gff_path'.
         --outdir              Output directory (default: ${params.outdir})
-        --ensg_lookup         Path to transcript ID to ENSG ID lookup table
+        --ensg_lookup         Path to transcript ID to ENSG ID lookup table; required when --run_gene_presence true
 
     Optional arguments:
         --ensembl_cache_dir   Cache directory for Ensembl GFFs (default: ${params.ensembl_cache_dir})
         --cat_cache_dir       Cache directory for CAT GFFs (default: ${params.cat_cache_dir})
         --assembly_reports_dir  Directory containing assembly reports (optional)
         --comparison_script   Path to comparison script (default: auto-detected)
+        --contig_normalization  Contig normalization for overlap comparison: none, basic, cat_hash
+        --rename_ensembl_gff Rename Ensembl seqids with the NCBI assembly report before comparison (default: true)
         --max_assemblies      Limit number of assemblies (for testing, e.g., --max_assemblies 3)
 
     GENCODE/GRCh38 reference:
@@ -149,12 +155,16 @@ if (!params.input) {
     helpMessage()
     exit 1
 }
-if (!params.ensg_lookup) {
-    log.error "ERROR: --ensg_lookup parameter is required"
+if (params.run_gene_presence.toString().toBoolean() && !params.ensg_lookup) {
+    log.error "ERROR: --ensg_lookup parameter is required when --run_gene_presence is true"
     helpMessage()
     exit 1
-} else if (!file(params.ensg_lookup).exists()) {
+} else if (params.ensg_lookup && !file(params.ensg_lookup).exists()) {
     log.error "ERROR: ENSG lookup file not found at: ${params.ensg_lookup}"
+    exit 1
+}
+if (!(params.contig_normalization in ['none', 'basic', 'cat_hash'])) {
+    log.error "ERROR: --contig_normalization must be one of: none, basic, cat_hash"
     exit 1
 }
 
@@ -177,7 +187,14 @@ workflow {
             if (!row.assembly_accession || !row.sample_name) {
                 error "CSV must contain 'assembly_accession' and 'sample_name' columns"
             }
-            tuple(row.assembly_accession, row.sample_name)
+            tuple(
+                row.assembly_accession,
+                row.sample_name,
+                row.ensembl_gff_url ?: '',
+                row.cat_gff_url ?: '',
+                row.ensembl_gff_path ?: '',
+                row.cat_gff_path ?: ''
+            )
         }
         .take(params.max_assemblies ?: -1)  // Limit if specified
         .set { assemblies_ch }
@@ -193,7 +210,9 @@ workflow {
     }
 
     // Create channel for lookup file
-    ensg_lookup_ch = Channel.fromPath(params.ensg_lookup, checkIfExists: true)
+    ensg_lookup_ch = params.ensg_lookup
+        ? Channel.fromPath(params.ensg_lookup, checkIfExists: true)
+        : Channel.empty()
 
     // Copy mapping stats to output if provided
     if (params.mapping_stats_genes) {

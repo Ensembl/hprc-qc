@@ -9,13 +9,34 @@ process FETCH_ENSEMBL_GFF {
     publishDir "${params.ensembl_cache_dir}", mode: 'copy'
 
     input:
-    tuple val(assembly_accession), val(sample_name)
+    tuple val(assembly_accession), val(sample_name), val(ensembl_gff_url), val(ensembl_gff_path)
 
     output:
     tuple val(assembly_accession), val(sample_name), path("${assembly_accession}.gff3.gz"), emit: gff
 
     script:
     """
+    if [ -n "${ensembl_gff_path}" ]; then
+        echo "Using local Ensembl GFF: ${ensembl_gff_path}" >&2
+        case "${ensembl_gff_path}" in
+            *.gz)
+                cp "${ensembl_gff_path}" "${assembly_accession}.gff3.gz"
+                ;;
+            *)
+                gzip -c "${ensembl_gff_path}" > "${assembly_accession}.gff3.gz"
+                ;;
+        esac
+        test -s "${assembly_accession}.gff3.gz"
+        exit 0
+    fi
+
+    if [ -n "${ensembl_gff_url}" ]; then
+        echo "Downloading Ensembl GFF from explicit URL: ${ensembl_gff_url}" >&2
+        curl -f -L -o "${assembly_accession}.gff3.gz" "${ensembl_gff_url}"
+        test -s "${assembly_accession}.gff3.gz"
+        exit 0
+    fi
+
     # 1. Define the base location for this assembly
     BASE_URL="https://ftp.ebi.ac.uk/pub/ensemblorganisms/Homo_sapiens/${assembly_accession}/ensembl/geneset"
 

@@ -1,0 +1,2 @@
+assembly_accession,sample_name,ensembl_gff_url,cat_gff_url
+GCA_009914755.4,CHM13,https://ftp.ebi.ac.uk/pub/ensemblorganisms/Homo_sapiens/GCA_009914755.4/ensembl/geneset/2022_07/genes.gff3.gz,https://public.gi.ucsc.edu/~pnhebbar/share/CHM13_consensus.gff3

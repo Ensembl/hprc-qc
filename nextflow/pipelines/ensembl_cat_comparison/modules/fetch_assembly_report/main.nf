@@ -1,7 +1,7 @@
 process FETCH_ASSEMBLY_REPORT {
     tag "$assembly_accession"
     label 'process_download'
-    conda 'bioconda::biopython conda-forge::requests'
+    conda 'conda-forge::biopython conda-forge::requests'
     errorStrategy 'retry'
     maxRetries 3
     publishDir "${params.assembly_reports_dir}", mode: 'copy'

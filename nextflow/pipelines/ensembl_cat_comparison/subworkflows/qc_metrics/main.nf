@@ -48,7 +48,7 @@ workflow QC_METRICS {
         coding_integrity_ch = Channel.empty()
     }
 
-    if (params.run_gene_presence) {
+    if (params.run_gene_presence.toString().toBoolean()) {
         GENE_PRESENCE(qc_inputs.presence.combine(ensg_lookup))
         gene_presence_ch = GENE_PRESENCE.out.metrics
     } else {
@@ -62,7 +62,7 @@ workflow QC_METRICS {
         multi_mapping_ch = Channel.empty()
     }
 
-    if (params.run_grch38_divergence) {
+    if (params.run_grch38_divergence.toString().toBoolean()) {
         GRCH38_DIVERGENCE(qc_inputs.divergence, gencode_gtf.first())
         grch38_divergence_ch = GRCH38_DIVERGENCE.out.metrics
     } else {

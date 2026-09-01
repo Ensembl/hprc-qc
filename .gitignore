@@ -36,3 +36,37 @@ nextflow/pipelines/ensembl_cat_comparison/notebooks/backups/
 *.gtf
 *.gtf.gz
 *.tbi
+
+# Local poster renders, layouts, and extracted visual/source bundles.
+# Keep poster source code/notebooks visible; ignore only materialised outputs.
+output/
+tmp/
+source_figures/
+docs/hprc-trackhubs/
+poster_assets/
+poster_*.png
+poster_*.svg
+poster_*_sources.md
+poster_exports_v1/mapping_stats/
+poster_exports_v1/README.md
+poster_exports_v1/notebooks_vector/README.md
+poster_exports_v1/notebook_png_native/
+poster_exports_v1/office_package_media/
+poster_exports_v1/pdf_embedded_images/
+poster_exports_v1/pdf_page_svg/
+poster_exports_v1/poster_crops/
+poster_exports_v1/supplement_source_figures/
+poster_exports_v1/**/figures/
+poster_exports_v1/**/poster_vector_exports/
+
+# Machine-specific local sample sheet and scratch patch.
+nextflow/pipelines/ensembl_cat_comparison/sample_sheets/t2t_chm13_e115.csv
+trackhubgenerator-genark.patch
+
+# Local poster builders and one-off extraction helpers; plotting source is kept
+# in the selected notebooks under poster_exports_v1/notebooks_vector/.
+*.mjs
+export_poster_visual_sources.py
+extract_hprc2_mapping_stats.py
+make_poster_results_inventory.py
+poster_exports_v1/scripts/

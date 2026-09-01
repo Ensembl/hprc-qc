@@ -34,7 +34,8 @@ process RUN_COMPARISON {
     # Run the comparison script (bin/ is automatically on PATH)
     # Chromosome normalization is 'none' because the Ensembl GFF has already
     # been renamed upstream (RENAME_ENSEMBL_GFF) to use GenBank accessions
-    # matching the CAT GFF.
+    # matching the CAT GFF. Use --contig_normalization basic for sources such
+    # as CHM13 where Ensembl uses "1" and CAT uses "chr1".
     hprc_ensembl_cat_overlap.py \\
         --ensembl-gff ${ensembl_gff} \\
         --cat-gff ${cat_gff} \\
@@ -43,7 +44,7 @@ process RUN_COMPARISON {
         --cat-index cat_index.csv \\
         --assemblies-index assemblies.csv \\
         --output-prefix ${assembly_accession} \\
-        --contig-normalization none \\
+        --contig-normalization ${params.contig_normalization} \\
         2>&1 | tee ${assembly_accession}.log
 
     # Check if output files were created

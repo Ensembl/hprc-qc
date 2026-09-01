@@ -4,29 +4,29 @@ include { FETCH_ASSEMBLY_REPORT } from '../../modules/fetch_assembly_report/main
 
 workflow FETCH_FILES {
     take:
-    assemblies_ch  // Channel of [assembly_accession, sample_name]
+    assemblies_ch  // Channel of [assembly_accession, sample_name, ensembl_gff_url, cat_gff_url, ensembl_gff_path, cat_gff_path]
 
     main:
     // Split input channel for parallel processing
     assemblies_ch
-        .multiMap { accession, sample ->
-            ensembl: tuple(accession, sample)
-            cat: tuple(accession, sample)
+        .multiMap { accession, sample, ensembl_gff_url, cat_gff_url, ensembl_gff_path, cat_gff_path ->
+            ensembl: tuple(accession, sample, ensembl_gff_url ?: '', ensembl_gff_path ?: '')
+            cat: tuple(accession, sample, cat_gff_url ?: '', cat_gff_path ?: '')
             report: tuple(accession, sample)
         }
         .set { split_ch }
 
     // Load cached Ensembl GFFs and separate cached from missing
     split_ch.ensembl
-        .map { accession, sample ->
+        .map { accession, sample, ensembl_gff_url, ensembl_gff_path ->
             def cached = file("${params.ensembl_cache_dir}/${accession}.gff3.gz")
-            tuple(accession, sample, cached.exists() ? cached : null)
+            tuple(accession, sample, ensembl_gff_url, ensembl_gff_path, cached.exists() ? cached : null)
         }
-        .branch { accession, sample, cached_file ->
+        .branch { accession, sample, ensembl_gff_url, ensembl_gff_path, cached_file ->
             cached: cached_file != null
                 return tuple(accession, sample, cached_file)
             missing: true
-                return tuple(accession, sample)
+                return tuple(accession, sample, ensembl_gff_url, ensembl_gff_path)
         }
         .set { ensembl_split }
 
@@ -38,15 +38,15 @@ workflow FETCH_FILES {
 
     // Load cached CAT GFFs and separate cached from missing
     split_ch.cat
-        .map { accession, sample ->
+        .map { accession, sample, cat_gff_url, cat_gff_path ->
             def cached = file("${params.cat_cache_dir}/${sample}_cat.gff3.gz")
-            tuple(accession, sample, cached.exists() ? cached : null)
+            tuple(accession, sample, cat_gff_url, cat_gff_path, cached.exists() ? cached : null)
         }
-        .branch { accession, sample, cached_file ->
+        .branch { accession, sample, cat_gff_url, cat_gff_path, cached_file ->
             cached: cached_file != null
                 return tuple(accession, sample, cached_file)
             missing: true
-                return tuple(accession, sample)
+                return tuple(accession, sample, cat_gff_url, cat_gff_path)
         }
         .set { cat_split }
 

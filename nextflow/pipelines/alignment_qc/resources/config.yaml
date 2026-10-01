@@ -1,0 +1,31 @@
+- graph: {{GRAPH}}
+  grouping: Haplotype
+  analyses:
+    - !Hist
+      count_type: Bp
+    - !Growth
+      coverage: 1,1,2
+      quorum: 0,0.9,0
+    - !Info
+    - !CoverageLine
+      count_type: All
+      reference: "grch38"
+    - !NodeDistribution
+    - !Similarity
+      count_type: Bp
+    # Insert custom reports here:
+    # - !Custom
+    #   name: Csv
+    #   file: files/test.csv
+    # - !Custom
+    #   name: Pdf
+    #   file: files/test.pdf
+    # - !Custom
+    #   name: Png
+    #   file: files/test.png
+    # - !Custom
+    #   name: Svg
+    #   file: files/test.svg
+    # - !Custom
+    #   name: Json
+    #   file: files/test.json

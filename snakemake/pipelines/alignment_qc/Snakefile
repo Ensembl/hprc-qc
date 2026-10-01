@@ -1,0 +1,15 @@
+from glob import glob
+from os.path import basename
+
+configfile: "config/config.yaml"
+include: "../../rules/panacus_gen_config.smk"
+include: "../../rules/panacus.smk"
+
+GRAPH_DIR = config["graph_dir"]
+print(GRAPH_DIR)
+SAMPLES = list(map(lambda f: basename(f)[:-4], glob(f'{GRAPH_DIR}/*.gfa')))
+print(SAMPLES)
+
+rule all:
+    input:
+        expand(f'./results/{{samples}}.html', samples=SAMPLES)

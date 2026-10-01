@@ -1,0 +1,26 @@
+- graph: ${GRAPH}
+  grouping: Haplotype
+  nice: false
+  analyses:
+    - !Hist
+      count_type: All
+    - !Growth
+    - !Info
+    - !RegionalGrowth
+      reference: "CHM13"
+      count_type: Bp
+    - !RegionalGrowth
+      reference: "CHM13"
+      count_type: Node
+    - !RegionalGrowth
+      reference: "CHM13"
+      count_type: Edge
+    - !RegionalDegree
+      reference: "CHM13"
+    - !NodeDistribution
+    - !CoverageLine
+      count_type: All
+      reference: "CHM13"
+    - !Similarity
+      count_type: Bp
+      cluster_method: Single
